@@ -23,13 +23,16 @@ type Plan struct {
 	MaxHeight      int    `json:"max_height"`
 	RetentionHours int    `json:"retention_hours"`
 	PriceIDR       int    `json:"price_idr"`
+	Active         bool   `json:"active"`
+	SortOrder      int    `json:"sort_order"`
 }
 
-const planCols = "p.id::text, p.code, p.name, p.daily_limit, p.max_height, p.retention_hours, p.price_idr"
+const planCols = "p.id::text, p.code, p.name, p.daily_limit, p.max_height, p.retention_hours, p.price_idr, p.active, p.sort_order"
 
 func scanPlan(row pgx.Row) (*Plan, error) {
 	var p Plan
-	if err := row.Scan(&p.ID, &p.Code, &p.Name, &p.DailyLimit, &p.MaxHeight, &p.RetentionHours, &p.PriceIDR); err != nil {
+	if err := row.Scan(&p.ID, &p.Code, &p.Name, &p.DailyLimit, &p.MaxHeight,
+		&p.RetentionHours, &p.PriceIDR, &p.Active, &p.SortOrder); err != nil {
 		return nil, err
 	}
 	return &p, nil
@@ -40,6 +43,7 @@ func FreePlan(ctx context.Context, pool *pgxpool.Pool) (*Plan, error) {
 	return planByCode(ctx, pool, "free")
 }
 
+// planByCode mengambil plan aktif dengan kode tertentu.
 func planByCode(ctx context.Context, pool *pgxpool.Pool, code string) (*Plan, error) {
 	p, err := scanPlan(pool.QueryRow(ctx,
 		"SELECT "+planCols+" FROM plans p WHERE p.code = $1 AND p.active", code))
@@ -54,6 +58,104 @@ func PlanByCode(ctx context.Context, pool *pgxpool.Pool, code string) (*Plan, er
 	return planByCode(ctx, pool, code)
 }
 
+// PlanByCodeAny mencari plan apa pun termasuk yang nonaktif (panel admin).
+func PlanByCodeAny(ctx context.Context, pool *pgxpool.Pool, code string) (*Plan, error) {
+	p, err := scanPlan(pool.QueryRow(ctx,
+		"SELECT "+planCols+" FROM plans p WHERE p.code = $1", code))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return p, err
+}
+
+// ListAllPlans: semua plan termasuk yang nonaktif (urut sort_order).
+func ListAllPlans(ctx context.Context, pool *pgxpool.Pool) ([]Plan, error) {
+	rows, err := pool.Query(ctx,
+		"SELECT "+planCols+" FROM plans p ORDER BY p.sort_order, p.price_idr, p.code")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Plan
+	for rows.Next() {
+		p, err := scanPlan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *p)
+	}
+	return out, rows.Err()
+}
+
+// ErrPlanProtected: plan dasar (free) tidak boleh dihapus/dinonaktifkan
+// karena menjadi fallback semua pengguna tanpa langganan.
+var ErrPlanProtected = errors.New("paket free tidak bisa dihapus atau dinonaktifkan")
+
+// PlanInput data paket dari panel admin (create).
+type PlanInput struct {
+	Code           string
+	Name           string
+	DailyLimit     int
+	MaxHeight      int
+	RetentionHours int
+	PriceIDR       int
+	SortOrder      int
+	Active         bool
+}
+
+// CreatePlan menambah paket baru. Mengembalikan nil,nil jika kode sudah dipakai.
+func CreatePlan(ctx context.Context, pool *pgxpool.Pool, in PlanInput) (*Plan, error) {
+	existing, err := PlanByCodeAny(ctx, pool, in.Code)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, nil
+	}
+	p, err := scanPlan(pool.QueryRow(ctx, `
+		WITH ins AS (
+			INSERT INTO plans (code, name, daily_limit, max_height,
+			                   retention_hours, price_idr, active, sort_order)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			RETURNING *
+		)
+		SELECT `+planCols+` FROM ins p`,
+		in.Code, in.Name, in.DailyLimit, in.MaxHeight, in.RetentionHours,
+		in.PriceIDR, in.Active, in.SortOrder))
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// DeletePlan menghapus paket. Jika paket masih dirujuk langganan/pembayaran,
+// paket tidak dihapus melainkan dinonaktifkan (riwayat tetap utuh) —
+// deleted=false menandakan hal itu.
+func DeletePlan(ctx context.Context, pool *pgxpool.Pool, code string) (deleted bool, err error) {
+	if code == "free" {
+		return false, ErrPlanProtected
+	}
+	var inUse bool
+	err = pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM subscriptions s JOIN plans p ON p.id = s.plan_id
+		               WHERE p.code = $1)
+		    OR EXISTS(SELECT 1 FROM payments pm JOIN plans p ON p.id = pm.plan_id
+		               WHERE p.code = $1)`, code).Scan(&inUse)
+	if err != nil {
+		return false, err
+	}
+	if inUse {
+		_, err = pool.Exec(ctx,
+			"UPDATE plans SET active = false WHERE code = $1", code)
+		return false, err
+	}
+	ct, err := pool.Exec(ctx, "DELETE FROM plans WHERE code = $1", code)
+	if err != nil {
+		return false, err
+	}
+	return ct.RowsAffected() > 0, nil
+}
+
 // ListActivePlans daftar plan untuk halaman harga, termurah dulu.
 func ListActivePlans(ctx context.Context, pool *pgxpool.Pool) ([]Plan, error) {
 	rows, err := pool.Query(ctx,
@@ -64,11 +166,11 @@ func ListActivePlans(ctx context.Context, pool *pgxpool.Pool) ([]Plan, error) {
 	defer rows.Close()
 	var out []Plan
 	for rows.Next() {
-		var p Plan
-		if err := rows.Scan(&p.ID, &p.Code, &p.Name, &p.DailyLimit, &p.MaxHeight, &p.RetentionHours, &p.PriceIDR); err != nil {
+		p, err := scanPlan(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, p)
+		out = append(out, *p)
 	}
 	return out, rows.Err()
 }

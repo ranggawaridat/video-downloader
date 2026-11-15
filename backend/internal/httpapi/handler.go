@@ -75,7 +75,10 @@ func (h *Handler) Routes() http.Handler {
 		r.Post("/users/{id}/grant", h.adminGrantPlan)
 		r.Get("/downloads", h.adminListDownloads)
 		r.Post("/downloads/{id}/retry", h.adminRetryDownload)
+		r.Get("/plans", h.adminListPlans)
+		r.Post("/plans", h.adminCreatePlan)
 		r.Patch("/plans/{code}", h.adminUpdatePlan)
+		r.Delete("/plans/{code}", h.adminDeletePlan)
 	})
 
 	r.Handle("/*", h.staticHandler())

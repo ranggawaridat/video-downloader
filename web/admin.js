@@ -385,45 +385,132 @@ $("#dl-status-filter").addEventListener("change", loadDownloads);
 
 async function loadPlansForEditor() {
   try {
-    const data = await api("/api/plans");
+    // Endpoint admin: ikut mengembalikan paket nonaktif + jumlah pemakaian.
+    const data = await api("/api/admin/plans");
     plans = data.items || [];
   } catch { plans = []; }
   renderPlansEditor();
 }
 
+function planField(label, value, opts = {}) {
+  const f = document.createElement("div");
+  f.className = "field";
+  const l = document.createElement("label");
+  l.textContent = label;
+  const inp = document.createElement("input");
+  if (opts.text) {
+    inp.type = "text";
+    inp.value = value == null ? "" : value;
+  } else {
+    inp.type = "number";
+    inp.value = value;
+    inp.min = opts.min == null ? 0 : opts.min;
+  }
+  if (opts.placeholder) inp.placeholder = opts.placeholder;
+  f.append(l, inp);
+  return { field: f, input: inp };
+}
+
 function renderPlansEditor() {
   const el = $("#plans-editor");
   el.innerHTML = "";
+
+  // ---- form tambah paket ----
+  const addCard = document.createElement("div");
+  addCard.className = "card";
+  const addTitle = document.createElement("h3");
+  addTitle.textContent = "Tambah paket baru";
+  addCard.appendChild(addTitle);
+
+  const grid = document.createElement("div");
+  grid.className = "plan-edit-grid";
+  const code = planField("Kode (unik, tanpa spasi)", "", { text: true, placeholder: "mis. premium" });
+  const name = planField("Nama tampilan", "", { text: true, placeholder: "mis. Premium" });
+  const daily = planField("Unduhan / hari", 10, { min: 1 });
+  const height = planField("Resolusi maks (p)", 720, { min: 1 });
+  const retention = planField("Retensi (jam)", 12, { min: 1 });
+  const price = planField("Harga (Rp, 0 = gratis)", 0);
+  const order = planField("Urutan tampil", 2);
+  grid.append(code.field, name.field, daily.field, height.field, retention.field, price.field, order.field);
+  addCard.appendChild(grid);
+
+  const addBtn = document.createElement("button");
+  addBtn.className = "btn primary small";
+  addBtn.textContent = "Tambah paket";
+  addBtn.addEventListener("click", async () => {
+    addBtn.disabled = true;
+    try {
+      const created = await api("/api/admin/plans", {
+        method: "POST",
+        body: JSON.stringify({
+          code: code.input.value.trim(),
+          name: name.input.value.trim(),
+          daily_limit: Number(daily.input.value),
+          max_height: Number(height.input.value),
+          retention_hours: Number(retention.input.value),
+          price_idr: Number(price.input.value),
+          sort_order: Number(order.input.value),
+        }),
+      });
+      alert("Paket " + created.name + " (" + created.code + ") ditambahkan.");
+      await loadPlansForEditor();
+    } catch (err) { alert(err.message); }
+    addBtn.disabled = false;
+  });
+  addCard.appendChild(addBtn);
+  el.appendChild(addCard);
+
+  if (!plans.length) {
+    const empty = document.createElement("div");
+    empty.className = "sub";
+    empty.textContent = "Belum ada paket.";
+    el.appendChild(empty);
+    return;
+  }
+
+  // ---- daftar paket yang ada ----
   const wrap = document.createElement("div");
   wrap.className = "plan-edit";
 
   for (const p of plans) {
     const card = document.createElement("div");
-    card.className = "card";
+    card.className = "card" + (p.active ? "" : " plan-off");
+
     const title = document.createElement("h3");
     title.textContent = p.code + " — " + p.name;
+    const flag = document.createElement("span");
+    flag.className = "plan-flag" + (p.active ? " on" : " off");
+    flag.textContent = p.active ? "Aktif" : "Nonaktif";
+    title.appendChild(flag);
     card.appendChild(title);
 
+    const usage = document.createElement("div");
+    usage.className = "sub";
+    usage.textContent =
+      p.subscribers + " pelanggan aktif • " + p.payments + " pembayaran tercatat" +
+      (p.code === "free" ? " • paket bawaan, wajib aktif" : "");
+    card.appendChild(usage);
+
     const fields = [
-      ["daily_limit", "Unduhan / hari", p.daily_limit],
-      ["max_height", "Resolusi maks", p.max_height],
-      ["retention_hours", "Retensi (jam)", p.retention_hours],
-      ["price_idr", "Harga (Rp)", p.price_idr],
+      ["name", "Nama", p.name, { text: true }],
+      ["daily_limit", "Unduhan / hari", p.daily_limit, { min: 1 }],
+      ["max_height", "Resolusi maks", p.max_height, { min: 1 }],
+      ["retention_hours", "Retensi (jam)", p.retention_hours, { min: 1 }],
+      ["price_idr", "Harga (Rp)", p.price_idr, { min: 0 }],
+      ["sort_order", "Urutan", p.sort_order, { min: 0 }],
     ];
     const inputs = {};
-    for (const [key, label, value] of fields) {
-      const f = document.createElement("div");
-      f.className = "field";
-      const l = document.createElement("label");
-      l.textContent = label;
-      const inp = document.createElement("input");
-      inp.type = "number";
-      inp.value = value;
-      inp.min = key === "price_idr" ? 0 : 1;
-      inputs[key] = inp;
-      f.append(l, inp);
-      card.appendChild(f);
+    const fieldGrid = document.createElement("div");
+    fieldGrid.className = "plan-edit-grid";
+    for (const [key, label, value, opts] of fields) {
+      const pf = planField(label, value, opts);
+      inputs[key] = pf.input;
+      fieldGrid.appendChild(pf.field);
     }
+    card.appendChild(fieldGrid);
+
+    const actions = document.createElement("div");
+    actions.className = "plan-actions";
 
     const save = document.createElement("button");
     save.className = "btn primary small";
@@ -431,20 +518,73 @@ function renderPlansEditor() {
     save.addEventListener("click", async () => {
       save.disabled = true;
       try {
-        await api("/api/admin/plans/" + p.code, {
+        await api("/api/admin/plans/" + encodeURIComponent(p.code), {
           method: "PATCH",
           body: JSON.stringify({
+            name: inputs.name.value.trim(),
             daily_limit: Number(inputs.daily_limit.value),
             max_height: Number(inputs.max_height.value),
             retention_hours: Number(inputs.retention_hours.value),
             price_idr: Number(inputs.price_idr.value),
+            sort_order: Number(inputs.sort_order.value),
           }),
         });
         await loadPlansForEditor();
       } catch (err) { alert(err.message); }
       save.disabled = false;
     });
-    card.appendChild(save);
+    actions.appendChild(save);
+
+    // Aktif / nonaktifkan
+    const toggle = document.createElement("button");
+    toggle.className = "btn ghost small";
+    toggle.textContent = p.active ? "Nonaktifkan" : "Aktifkan";
+    toggle.addEventListener("click", async () => {
+      if (p.active && p.code === "free") {
+        alert("Paket free harus tetap aktif (dipakai pengguna tanpa langganan).");
+        return;
+      }
+      if (p.active && p.subscribers > 0 &&
+          !confirm("Nonaktifkan paket ini? Pelanggan yang sudah berlangganan tetap " +
+                   "memakai manfaatnya sampai masa aktifnya habis, tapi paket tidak " +
+                   "bisa dibeli lagi.")) return;
+      toggle.disabled = true;
+      try {
+        await api("/api/admin/plans/" + encodeURIComponent(p.code), {
+          method: "PATCH",
+          body: JSON.stringify({ active: !p.active }),
+        });
+        await loadPlansForEditor();
+      } catch (err) { alert(err.message); }
+      toggle.disabled = false;
+    });
+    actions.appendChild(toggle);
+
+    // Hapus (otomatis jadi nonaktif bila sudah pernah dipakai)
+    const del = document.createElement("button");
+    del.className = "btn ghost small danger";
+    del.textContent = "Hapus";
+    del.addEventListener("click", async () => {
+      if (p.code === "free") {
+        alert("Paket free tidak bisa dihapus.");
+        return;
+      }
+      if (!confirm("Hapus paket " + p.name + "?" +
+                   (p.subscribers || p.payments
+                      ? "\n\nPaket ini sudah dipakai — akan dinonaktifkan, bukan dihapus, " +
+                        "agar riwayat langganan & pembayaran tetap utuh."
+                      : ""))) return;
+      del.disabled = true;
+      try {
+        const res = await api("/api/admin/plans/" + encodeURIComponent(p.code), { method: "DELETE" });
+        alert(res.status === "deleted" ? "Paket dihapus." : "Paket dinonaktifkan (riwayat dipertahankan).");
+        await loadPlansForEditor();
+      } catch (err) { alert(err.message); }
+      del.disabled = false;
+    });
+    actions.appendChild(del);
+
+    card.appendChild(actions);
     wrap.appendChild(card);
   }
   el.appendChild(wrap);

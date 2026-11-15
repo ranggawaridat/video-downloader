@@ -55,6 +55,9 @@ Run `docker compose build api worker` separately after code changes — `api` an
 - Admin account is bootstrapped at API startup from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (empty env = skipped). Existing email is promoted to admin, password NOT overwritten.
 - Admin API lives under `/api/admin/*` behind `requireAdmin`. Stats use single-row subselects; keep new stats there, not as separate round trips.
 - Admin retry (`POST /api/admin/downloads/{id}/retry`) resets `attempts=0` — that's what lets the claim query pick it up again.
+- Plans are managed via `/api/admin/plans` (`GET` list incl. inactive + usage counts, `POST` create, `PATCH {code}`, `DELETE {code}`). Deletion is *conditional*: `billing.DeletePlan` hard-deletes only when the plan has never been referenced by subscriptions/payments, otherwise it flips `active=false` so history stays referentially intact. The response reports `status: deleted|deactivated`.
+- `free` is protected (`billing.ErrPlanProtected`): cannot be deleted or deactivated — it is the fallback plan for every user without a subscription.
+- Deactivating a plan does **not** revoke existing subscribers: `ActivePlanForUser` ignores the `active` flag; only `ListActivePlans` (public pricing) filters on it.
 
 ## yt-dlp engine
 

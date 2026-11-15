@@ -69,7 +69,10 @@ go run ./cmd/worker
 | POST | `/api/admin/users/{id}/grant` | **Admin** — aktivasi manual langganan |
 | GET | `/api/admin/downloads` | **Admin** — semua job (query `status=`) |
 | POST | `/api/admin/downloads/{id}/retry` | **Admin** — requeue job gagal/canceled |
-| PATCH | `/api/admin/plans/{code}` | **Admin** — ubah benefit plan |
+| GET | `/api/admin/plans` | **Admin** — semua paket (termasuk nonaktif) + jumlah pelanggan/pembayaran |
+| POST | `/api/admin/plans` | **Admin** — tambah paket `{code, name, daily_limit, max_height, retention_hours, price_idr, sort_order, active}` |
+| PATCH | `/api/admin/plans/{code}` | **Admin** — ubah benefit / aktif-nonaktifkan paket |
+| DELETE | `/api/admin/plans/{code}` | **Admin** — hapus paket (jadi nonaktif bila sudah pernah dipakai; `free` dilindungi) |
 | POST | `/api/billing/checkout` | `{plan_code}` — mode `manual`: aktivasi instan; mode `midtrans`: buat Snap payment |
 | GET | `/api/billing/payments/{id}` | Status payment milik sendiri (polling frontend) |
 | POST | `/api/billing/webhook/midtrans` | Notifikasi Midtrans (verifikasi signature, idempotent) |
@@ -142,6 +145,26 @@ Dua jaring pengaman bila notifikasi bermasalah:
   masih `pending` (umur > 2 menit, maks 20 per putaran) dan menyinkronkan
   statusnya dari Core API — jadi pembayaran tetap aktif walau webhook tidak
   pernah sampai (tunnel mati/URL berubah).
+
+## Pengelolaan paket
+
+Paket dikelola dari tab **Paket** di `/admin` — tambah, ubah benefit, dan
+nonaktifkan/hapus tanpa SQL manual. Semua sumber kebenaran ada di tabel
+`plans` (bukan env).
+
+- **Tambah**: kode unik (huruf kecil/angka/`-`/`_`, maks 32), nama, kuota
+  harian, resolusi maks, retensi, harga, urutan tampil. Kode duplikat → 409.
+- **Ubah**: nama & benefit bisa diubah kapan saja; berlaku untuk unduhan
+  berikutnya. Perubahan berlaku mundur juga bagi pelanggan yang sedang aktif.
+- **Nonaktifkan**: paket hilang dari `/api/plans` (tidak bisa dibeli lagi),
+  tetapi pelanggan yang sudah berlangganan tetap memakai manfaatnya sampai
+  `period_end`. `ActivePlanForUser` sengaja mengabaikan flag `active`.
+- **Hapus**: paket yang belum pernah dipakai langganan/pembayaran dihapus
+  permanen; yang sudah dipakai hanya dinonaktifkan agar riwayat
+  `subscriptions`/`payments` tetap utuh. Respons berisi
+  `{"status": "deleted" | "deactivated", "plan": {...}}`.
+- Paket `free` dilindungi: tidak bisa dihapus atau dinonaktifkan karena menjadi
+  fallback semua pengguna tanpa langganan.
 
 ## Struktur
 

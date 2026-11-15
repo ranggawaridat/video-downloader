@@ -178,16 +178,22 @@
   gap: 12px;
 }
 .plan-edit .card { margin-bottom: 0; }
-.plan-edit .field {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+#plans-editor > .card { margin-bottom: 16px; }
+#plans-editor > .card h3 { margin: 0 0 12px; font-size: 15px; }
+.plan-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 14px;
+  margin-bottom: 12px;
 }
-.plan-edit .field label { color: var(--muted); font-size: 13px; }
-.plan-edit .field input {
-  width: 110px;
+.plan-edit-grid .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.plan-edit-grid .field label { color: var(--muted); font-size: 12px; }
+.plan-edit-grid .field input {
+  width: 100%;
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--line);
@@ -195,9 +201,21 @@
   color: var(--text);
   font-size: 13px;
   outline: none;
-  text-align: right;
 }
-.plan-edit .field input:focus { border-color: var(--accent); }
+.plan-edit-grid .field input:focus { border-color: var(--accent); }
+.plan-flag {
+  margin-left: 8px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  vertical-align: middle;
+}
+.plan-flag.on { color: var(--ok); border-color: rgba(62, 207, 142, .45); }
+.plan-flag.off { color: var(--muted); }
+.plan-off { opacity: .72; }
+.plan-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn.ghost.danger { color: var(--bad); }
 
 .empty-admin { color: var(--muted); padding: 16px 0; text-align: center; }
 
