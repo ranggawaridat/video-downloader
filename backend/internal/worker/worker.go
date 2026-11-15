@@ -62,6 +62,8 @@ func (w *Worker) Run(ctx context.Context) {
 		"files_dir", w.cfg.FilesDir,
 		"max_attempts", w.cfg.MaxAttempts)
 
+	w.recoverRunning(ctx)
+
 	for i := 0; i < w.cfg.WorkerConcurrency; i++ {
 		go w.loop(ctx, i)
 	}
@@ -102,6 +104,23 @@ func (w *Worker) loop(ctx context.Context, n int) {
 
 		w.log.Info("job started", "id", j.ID, "url", j.URL, "format", j.Format, "worker", n)
 		w.process(ctx, j)
+	}
+}
+
+// recoverRunning mengembalikan job 'running' ke 'queued' saat worker start.
+// MVP mengasumsikan satu instance worker, jadi job 'running' saat startup
+// pasti korban restart — aman untuk diproses ulang dari awal.
+func (w *Worker) recoverRunning(ctx context.Context) {
+	ct, err := w.pool.Exec(ctx, `
+		UPDATE downloads
+		SET status = 'queued', progress = 0, next_run_at = NULL
+		WHERE status = 'running'`)
+	if err != nil {
+		w.log.Error("recover running jobs failed", "err", err)
+		return
+	}
+	if ct.RowsAffected() > 0 {
+		w.log.Info("running jobs recovered", "count", ct.RowsAffected())
 	}
 }
 

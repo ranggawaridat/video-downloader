@@ -146,7 +146,7 @@ func (h *Handler) createDownload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_url", err.Error())
 		return
 	}
-	if !validFormat(req.Format, h.cfg.MaxHeight) {
+	if !validFormat(req.Format) {
 		writeError(w, http.StatusBadRequest, "invalid_format",
 			"Format harus 360, 480, 720, 1080, atau audio")
 		return
@@ -340,12 +340,12 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	return nil
 }
 
-func validFormat(f string, maxHeight int) bool {
+func validFormat(f string) bool {
 	if f == "audio" {
 		return true
 	}
 	h := parseHeight(f)
-	return h > 0 && h <= maxHeight && isStandardHeight(h)
+	return h > 0 && isStandardHeight(h)
 }
 
 func parseHeight(f string) int {

@@ -11,7 +11,7 @@ RUN go mod tidy \
 FROM alpine:3.20
 # yt-dlp di-pin supaya build reproducible; update lewat perubahan versi ini (CI mingguan disarankan).
 RUN apk add --no-cache ca-certificates ffmpeg python3 py3-pip \
- && pip3 install --no-cache-dir --break-system-packages "yt-dlp==2024.12.13"
+ && pip3 install --no-cache-dir --break-system-packages "yt-dlp==2026.10.26"
 COPY --from=build /out/api /app/api
 COPY --from=build /out/worker /app/worker
 WORKDIR /app
