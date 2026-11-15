@@ -3,30 +3,66 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>VidGrab — Video Downloader</title>
+  <meta name="description" content="Unduh video online dari YouTube, TikTok, dan situs yang didukung. Tempel tautan, pilih kualitas yang tersedia, lalu simpan video dengan VidGrab.">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#080d19">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="id_ID">
+  <meta property="og:title" content="VidGrab — Download Video Online">
+  <meta property="og:description" content="Tempel tautan video, pilih kualitas yang tersedia, lalu unduh dengan mudah.">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="VidGrab — Download Video Online">
+  <meta name="twitter:description" content="Unduh video online dari YouTube, TikTok, dan situs yang didukung.">
+  <title>Download Video Online YouTube &amp; TikTok — VidGrab</title>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "VidGrab",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Web",
+      "inLanguage": "id",
+      "description": "Layanan web untuk menganalisis dan mengunduh video dari YouTube, TikTok, dan situs yang didukung."
+    }
+  </script>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <header>
-    <div class="logo">VidGrab</div>
-    <div class="header-right">
-      <div class="quota" id="quota"></div>
-      <div class="header-actions" id="header-actions"></div>
+  <a class="skip-link" href="#main-content">Lewati ke konten</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/" aria-label="VidGrab, beranda">
+        <span class="logo-mark" aria-hidden="true">V</span>
+        <span>VidGrab</span>
+      </a>
+      <div class="header-right">
+        <div class="quota" id="quota" aria-live="polite"></div>
+        <div class="header-actions" id="header-actions"></div>
+      </div>
     </div>
   </header>
 
-  <main>
-    <section class="hero">
-      <h1>Unduh video dari YouTube, TikTok &amp; lainnya</h1>
-      <p class="sub">Tempel link di bawah — gratis, tanpa login.</p>
+  <main id="main-content" class="page-shell">
+    <section class="hero" aria-labelledby="page-title">
+      <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span> VIDEO DOWNLOADER ONLINE</p>
+      <h1 id="page-title">Download video online,<br><span class="hero-accent">tanpa langkah yang rumit.</span></h1>
+      <p class="sub">Tempel tautan dari YouTube, TikTok, atau situs yang didukung. Pilih kualitas yang tersedia dan mulai unduh.</p>
       <form id="analyze-form" autocomplete="off">
-        <input id="url" type="text" inputmode="url" placeholder="https://www.youtube.com/watch?v=..." required>
-        <button type="submit" id="analyze-btn" class="btn primary">Analisis</button>
+        <label class="sr-only" for="url">Tautan video</label>
+        <input id="url" type="url" inputmode="url" placeholder="Tempel tautan video di sini" aria-describedby="url-hint" required>
+        <button type="submit" id="analyze-btn" class="btn primary">Cek video <span aria-hidden="true">→</span></button>
       </form>
+      <p id="url-hint" class="form-hint">Mulai gratis tanpa membuat akun. Gunakan hanya untuk konten yang boleh Anda unduh.</p>
       <div id="analyze-error" class="error hidden"></div>
+
+      <div class="trust-row" aria-label="Keunggulan VidGrab">
+        <span><span aria-hidden="true">✓</span> Tanpa instal aplikasi</span>
+        <span><span aria-hidden="true">✓</span> Pilih kualitas video</span>
+        <span><span aria-hidden="true">✓</span> Gratis untuk mulai</span>
+      </div>
     </section>
 
-    <section id="result" class="card hidden">
+    <section id="result" class="card result-card hidden" aria-label="Hasil analisis video">
       <div class="result-head">
         <img id="result-thumb" alt="">
         <div class="result-text">
@@ -39,11 +75,13 @@
       <button id="download-btn" class="btn primary wide">Unduh sekarang</button>
     </section>
 
-    <section id="auth" class="card hidden">
+    <section id="auth" class="card hidden" aria-labelledby="auth-title">
       <h2 id="auth-title">Masuk</h2>
       <form id="auth-form" autocomplete="on">
-        <input id="auth-email" type="email" placeholder="email" required>
-        <input id="auth-pass" type="password" placeholder="password (min. 8 karakter)" required minlength="8">
+        <label class="sr-only" for="auth-email">Email</label>
+        <input id="auth-email" type="email" placeholder="Email" autocomplete="email" required>
+        <label class="sr-only" for="auth-pass">Kata sandi</label>
+        <input id="auth-pass" type="password" placeholder="Kata sandi (min. 8 karakter)" autocomplete="current-password" required minlength="8">
         <button type="submit" id="auth-submit" class="btn primary wide">Masuk</button>
       </form>
       <div id="auth-error" class="error hidden"></div>
@@ -53,20 +91,81 @@
       </div>
     </section>
 
-    <section id="history">
-      <h2>Riwayat unduhan</h2>
+        <section id="history" aria-labelledby="history-title">
+      <div class="section-heading section-heading-inline">
+        <div>
+          <p class="eyebrow">AKTIVITAS</p>
+          <h2 id="history-title">Riwayat unduhan</h2>
+        </div>
+      </div>
       <div id="history-list"></div>
     </section>
 
-    <section id="pricing">
-      <h2>Paket</h2>
+    <section class="how-it-works" aria-labelledby="how-title">
+      <div class="section-heading">
+        <p class="eyebrow">MUDAH DIGUNAKAN</p>
+        <h2 id="how-title">Unduh dalam tiga langkah</h2>
+        <p>Alur sederhana untuk menyimpan video dari tautan yang didukung.</p>
+      </div>
+      <div class="steps-grid">
+        <article class="step-card">
+          <span class="step-number">01</span>
+          <h3>Tempel tautan</h3>
+          <p>Salin URL video yang ingin Anda simpan dan tempel di kolom di atas.</p>
+        </article>
+        <article class="step-card">
+          <span class="step-number">02</span>
+          <h3>Pilih kualitas</h3>
+          <p>Lihat pilihan resolusi yang tersedia untuk video dan paket Anda.</p>
+        </article>
+        <article class="step-card">
+          <span class="step-number">03</span>
+          <h3>Simpan video</h3>
+          <p>Mulai proses unduhan dan ambil file setelah selesai diproses.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="seo-copy" aria-labelledby="about-title">
+      <div>
+        <p class="eyebrow">VIDGRAB</p>
+        <h2 id="about-title">Downloader video online untuk kebutuhan Anda</h2>
+      </div>
+      <p>VidGrab membantu menganalisis tautan video dan menyiapkan file untuk diunduh dari YouTube, TikTok, serta situs lain yang didukung. Tidak perlu memasang aplikasi: buka halaman ini, masukkan tautan, lalu pilih resolusi yang tersedia. Ketersediaan video dan kualitas bergantung pada sumber aslinya serta batas paket Anda.</p>
+    </section>
+
+    <section class="faq-section" aria-labelledby="faq-title">
+      <div class="section-heading">
+        <p class="eyebrow">PUSAT BANTUAN</p>
+        <h2 id="faq-title">Pertanyaan umum</h2>
+      </div>
+      <div class="faq-grid">
+        <article class="faq-item">
+          <h3>Apakah perlu membuat akun?</h3>
+          <p>Tidak. Anda dapat mulai menggunakan paket Gratis tanpa login. Akun diperlukan untuk fitur yang membutuhkan langganan.</p>
+        </article>
+        <article class="faq-item">
+          <h3>Apakah semua kualitas video tersedia?</h3>
+          <p>Pilihan kualitas mengikuti video sumber dan batas paket. Resolusi yang terkunci akan ditandai sebelum Anda memulai unduhan.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="pricing" aria-labelledby="pricing-title">
+      <div class="section-heading">
+        <p class="eyebrow">PILIH YANG SESUAI</p>
+        <h2 id="pricing-title">Paket VidGrab</h2>
+        <p>Mulai gratis, lalu upgrade jika membutuhkan batas yang lebih tinggi.</p>
+      </div>
       <div id="plan-list" class="plan-list"></div>
     </section>
   </main>
 
   <footer>
-    <span>VidGrab — file otomatis dihapus sesuai masa retensi paket.</span>
-    <span>Gunakan hanya untuk konten yang berhak Anda unduh.</span>
+    <div class="footer-inner">
+      <span>VidGrab</span>
+      <span>File akan dihapus otomatis sesuai masa retensi paket. Gunakan hanya untuk konten yang berhak Anda unduh.</span>
+    </div>
   </footer>
 
   <script src="/app.js"></script>

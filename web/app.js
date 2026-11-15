@@ -111,6 +111,7 @@ function showAuth(mode) {
   authMode = mode;
   $("#auth-title").textContent = mode === "login" ? "Masuk" : "Daftar";
   $("#auth-submit").textContent = mode === "login" ? "Masuk" : "Daftar";
+  $("#auth-pass").autocomplete = mode === "login" ? "current-password" : "new-password";
   $("#auth-switch-label").textContent = mode === "login" ? "Belum punya akun?" : "Sudah punya akun?";
   $("#auth-toggle").textContent = mode === "login" ? "Daftar" : "Masuk";
   $("#auth-error").classList.add("hidden");
