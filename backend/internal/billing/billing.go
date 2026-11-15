@@ -246,6 +246,74 @@ func RecordManualPayment(ctx context.Context, pool *pgxpool.Pool, userID, planID
 	return err
 }
 
+// PendingPayments: payment gateway yang masih menggantung dan sudah berumur
+// lebih dari minAge — kandidat rekonsiliasi bila notifikasi tidak sampai.
+func PendingPayments(ctx context.Context, pool *pgxpool.Pool, minAge time.Duration, limit int) ([]*Payment, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT `+paymentCols+`
+		FROM payments pm JOIN plans p ON p.id = pm.plan_id
+		WHERE pm.status = 'pending'
+		  AND pm.provider <> 'manual'
+		  AND pm.provider_ref <> ''
+		  AND pm.created_at < now() - make_interval(secs => $1)
+		ORDER BY pm.created_at
+		LIMIT $2`, int(minAge.Seconds()), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*Payment
+	for rows.Next() {
+		m, err := scanPayment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// ApplyProviderStatus menerapkan status transaksi gateway pada satu payment,
+// dan mengaktifkan langganan bila sudah lunas. Dipakai bersama oleh webhook
+// dan reconciler supaya aturannya satu tempat.
+// Mengembalikan true bila langganan baru saja diaktifkan.
+func ApplyProviderStatus(ctx context.Context, pool *pgxpool.Pool, pm *Payment, txnStatus, fraudStatus string, days int) (bool, error) {
+	if pm == nil {
+		return false, nil
+	}
+	paid := txnStatus == "settlement" ||
+		(txnStatus == "capture" && (fraudStatus == "" || fraudStatus == "accept"))
+
+	switch {
+	case paid:
+		isNewPaid, err := MarkPaymentPaid(ctx, pool, pm.ID)
+		if err != nil {
+			return false, err
+		}
+		if !isNewPaid {
+			return false, nil // sudah pernah paid: jangan aktifkan dua kali
+		}
+		if err := ActivateSubscription(ctx, pool, pm.UserID, pm.PlanID, pm.Provider, pm.ProviderRef, days); err != nil {
+			return false, err
+		}
+		return true, nil
+
+	case txnStatus == "pending":
+		return false, nil // masih menunggu, tidak ada perubahan
+
+	case txnStatus == "deny", txnStatus == "cancel", txnStatus == "expire":
+		if pm.Status != "pending" {
+			return false, nil // jangan turunkan status payment yang sudah paid
+		}
+		return false, SetPaymentStatus(ctx, pool, pm.ID, "failed")
+
+	case txnStatus == "refund", txnStatus == "partial_refund":
+		return false, SetPaymentStatus(ctx, pool, pm.ID, "refunded")
+	}
+	return false, nil
+}
+
 // CancelActive menonaktifkan langganan aktif (langsung, tanpa grace period).
 func CancelActive(ctx context.Context, pool *pgxpool.Pool, userID string) error {
 	_, err := pool.Exec(ctx, `

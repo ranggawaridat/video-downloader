@@ -149,7 +149,21 @@ sebagai fallback.
 Alur: checkout → payment `pending` + redirect URL Snap → user bayar →
 webhook `settlement` → payment `paid` → langganan 30 hari aktif otomatis.
 Aktivasi idempotent via `provider_ref` (order_id); frontend mem-poll
-`GET /api/billing/payments/{id}` setelah membuka Snap.
+`GET /api/billing/payments/{id}` setelah membuka Snap. Setelah pembayaran,
+Snap mengarahkan browser kembali ke `PUBLIC_BASE_URL/?payment=<id>` (callback
+`finish`), dan halaman web langsung mem-poll statusnya.
+
+Dua jaring pengaman bila notifikasi bermasalah:
+
+- **Verifikasi cadangan**: bila `signature_key` tidak cocok (mis. dashboard
+  memakai server key berbeda), status transaksi ditanyakan langsung ke Core API
+  Midtrans (`GET /v2/{order_id}/status`) memakai server key kita; hasil yang
+  terautentikasi itulah yang dipakai. Nominal tetap dicocokkan dengan nilai
+  tercatat.
+- **Reconciler**: goroutine di `cmd/api` tiap 2 menit memeriksa payment yang
+  masih `pending` (umur > 2 menit, maks 20 per putaran) dan menyinkronkan
+  statusnya dari Core API — jadi pembayaran tetap aktif walau webhook tidak
+  pernah sampai (tunnel mati/URL berubah).
 
 ## Struktur
 

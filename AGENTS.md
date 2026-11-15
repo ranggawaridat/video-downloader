@@ -43,8 +43,11 @@ Run `docker compose build api worker` separately after code changes — `api` an
 - Row ownership uses the `ownershipClause` pattern in `internal/httpapi/downloads.go` (`$1::uuid IS NOT NULL AND user_id = ...`). All user-scoped queries must go through it.
 - Billing modes: `BILLING_MODE=manual` (instant activation, dev/admin fallback) and `BILLING_MODE=midtrans` (Midtrans Snap). `internal/billing` is the seam for adding gateways (Stripe, Telegram Stars).
 - Midtrans flow: checkout creates a `payments` row (pending, order_id `vd-<hex>-<timestamp>`) → Snap redirect URL → webhook `POST /api/billing/webhook/midtrans` (unauthenticated route, signature SHA-512 verified) → `payments.status='paid'` → `ActivateSubscription` with `provider_ref=order_id` (idempotent — 30-day sub is inserted only if no active sub with that ref exists).
-- Webhook idempotency: `webhook_events` table keyed `(provider, event_id)` where event_id = `transaction_id:transaction_status:status_code`. Always respond 2xx to Midtrans except invalid signature (403).
+- Webhook idempotency: `webhook_events` table keyed `(provider, event_id)` where event_id = `transaction_id:transaction_status:status_code`. Respond 2xx to Midtrans (including duplicates and unknown orders); 403 only when the signature fails AND the Core API lookup cannot confirm the order.
 - Payment status transitions live in `internal/billing` (`MarkPaymentPaid` only flips `pending`→`paid`). Order_id max 50 chars per Midtrans spec.
+- Notification signature mismatch is NOT a rejection: the webhook falls back to `Client.GetTransactionStatus` (Core API, server-key authenticated) and trusts that result; only a successful API lookup that disagrees (or fails) yields 403. Nominal is always re-checked against the recorded amount.
+- `Handler.StartReconciler` (started from `cmd/api`) sweeps `pending` gateway payments older than 2 min every 2 min and applies the Core API status — this is what recovers payments when the notification never arrives (tunnel down/URL changed). Shared transition logic lives in `billing.ApplyProviderStatus`, used by both webhook and reconciler.
+- Snap `callbacks.finish/unfinish/error` point at `PUBLIC_BASE_URL/?payment=<payment_id>`; `web/app.js` reads that query param on load and polls the payment until paid.
 
 ## Telegram bot
 

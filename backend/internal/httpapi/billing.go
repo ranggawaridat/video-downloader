@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -97,12 +99,23 @@ func (h *Handler) checkoutMidtrans(w http.ResponseWriter, r *http.Request, userI
 		return
 	}
 
+	// Halaman tujuan setelah pembayaran di Snap — kembali ke web kita,
+	// bukan layar Snap yang buntu.
+	var finish, unfinish, errURL string
+	if base := strings.TrimRight(h.cfg.PublicBaseURL, "/"); base != "" {
+		back := base + "/?payment=" + pm.ID
+		finish, unfinish, errURL = back, back, back
+	}
+
 	redirect, _, err := h.midtrans.CreateSnapTransaction(r.Context(), midtrans.SnapTx{
 		OrderID:       orderID,
 		GrossAmount:   pl.PriceIDR,
 		CustomerEmail: userFromContext(r.Context()).Email,
 		ItemID:        pl.Code,
 		ItemName:      "Langganan " + pl.Name + " 30 hari",
+		FinishURL:     finish,
+		UnfinishURL:   unfinish,
+		ErrorURL:      errURL,
 	})
 	if err != nil {
 		h.log.Error("midtrans snap failed", "order_id", orderID, "err", err)
@@ -159,7 +172,9 @@ func (h *Handler) paymentStatus(w http.ResponseWriter, r *http.Request) {
 
 // midtransWebhook: notifikasi Midtrans (Notification API).
 // Route ini TIDAK lewat session middleware auth — dipanggil server Midtrans.
-// Verifikasi signature SHA-512; selalu balas 2xx supaya Midtrans tidak retry.
+// Signature SHA-512 diverifikasi; jika tidak cocok (mis. dashboard memakai
+// server key berbeda), status dipastikan lewat Core API terautentikasi.
+// Selalu balas 2xx bila notifikasi berasal dari Midtrans yang sah.
 func (h *Handler) midtransWebhook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 256*1024))
 	if err != nil {
@@ -182,9 +197,27 @@ func (h *Handler) midtransWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.midtrans.VerifySignature(n.OrderID, n.StatusCode, n.GrossAmount, n.Signature) {
-		h.log.Warn("midtrans webhook invalid signature", "order_id", n.OrderID)
-		writeError(w, http.StatusForbidden, "invalid_signature", "Signature tidak valid")
-		return
+		// Signature tidak cocok TIDAK langsung ditolak: server key yang dipakai
+		// menandatangani notifikasi bisa berbeda dari yang kita simpan. Kita
+		// tanyakan status transaksinya langsung ke Midtrans memakai server key
+		// kita sendiri (terautentikasi) dan percayai jawabannya.
+		st, verr := h.midtrans.GetTransactionStatus(r.Context(), n.OrderID)
+		if verr != nil || st == nil || st.OrderID != n.OrderID {
+			h.log.Warn("midtrans webhook rejected",
+				"order_id", n.OrderID, "err", verr)
+			writeError(w, http.StatusForbidden, "invalid_signature", "Signature tidak valid")
+			return
+		}
+		h.log.Warn("midtrans webhook signature mismatch — verified via core api",
+			"order_id", n.OrderID,
+			"txn_status", st.TransactionStatus,
+			"received_sig", maskTail(n.Signature),
+			"expected_sig", maskTail(h.midtrans.Signature(n.OrderID, n.StatusCode, n.GrossAmount)))
+		n.TxnStatus = st.TransactionStatus
+		n.FraudStatus = st.FraudStatus
+		n.StatusCode = st.StatusCode
+		n.GrossAmount = st.GrossAmount
+		n.TxnID = st.TransactionID
 	}
 
 	// Idempotensi: event yang sama hanya diproses sekali.
@@ -207,40 +240,35 @@ func (h *Handler) midtransWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Map status Midtrans → status internal.
-	paid := n.TxnStatus == "settlement" ||
-		(n.TxnStatus == "capture" && (n.FraudStatus == "" || n.FraudStatus == "accept"))
-	activate := false
-	switch {
-	case paid:
-		isNewPaid, err := billing.MarkPaymentPaid(r.Context(), h.pool, pm.ID)
-		if err != nil {
-			h.log.Error("mark payment paid failed", "err", err)
-		}
-		if isNewPaid {
-			activate = true
-		}
-	case n.TxnStatus == "pending":
-		_ = billing.SetPaymentStatus(r.Context(), h.pool, pm.ID, "pending")
-	case n.TxnStatus == "deny" || n.TxnStatus == "cancel" || n.TxnStatus == "expire":
-		_ = billing.SetPaymentStatus(r.Context(), h.pool, pm.ID, "failed")
-	case n.TxnStatus == "refund" || n.TxnStatus == "partial_refund":
-		_ = billing.SetPaymentStatus(r.Context(), h.pool, pm.ID, "refunded")
+	// Jangan percaya nominal dari notifikasi: harus sama dengan nilai tercatat.
+	if amt, perr := strconv.ParseFloat(n.GrossAmount, 64); perr != nil || int(amt+0.5) != pm.AmountIDR {
+		h.log.Warn("midtrans webhook amount mismatch",
+			"order_id", n.OrderID, "got", n.GrossAmount, "want", pm.AmountIDR)
+		writeJSON(w, http.StatusOK, map[string]string{"status": "amount_mismatch"})
+		return
 	}
 
-	// Aktivasi langganan 30 hari (idempotent via provider_ref).
-	if activate {
-		if err := billing.ActivateSubscription(r.Context(), h.pool,
-			pm.UserID, pm.PlanID, "midtrans", n.OrderID, 30); err != nil {
-			h.log.Error("activate subscription from webhook failed",
-				"order_id", n.OrderID, "err", err)
-			// Tetap 200: payment sudah paid; aktivasi bisa diulang manual admin.
-		} else {
-			h.log.Info("subscription activated via midtrans", "order_id", n.OrderID)
-		}
+	activated, err := billing.ApplyProviderStatus(r.Context(), h.pool, pm, n.TxnStatus, n.FraudStatus, subscriptionDays)
+	if err != nil {
+		h.log.Error("apply provider status failed", "order_id", n.OrderID, "err", err)
+		// Tetap 200: Midtrans tidak akan retry untuk kegagalan sisi kita,
+		// tapi reconciler akan menyelesaikannya.
+		writeJSON(w, http.StatusOK, map[string]string{"status": "retry_later"})
+		return
+	}
+	if activated {
+		h.log.Info("subscription activated via midtrans", "order_id", n.OrderID)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// maskTail menyamarkan nilai sensitif untuk log (hanya 8 karakter awal).
+func maskTail(s string) string {
+	if len(s) <= 8 {
+		return "***"
+	}
+	return s[:8] + "…"
 }
 
 func (h *Handler) cancelSubscription(w http.ResponseWriter, r *http.Request) {

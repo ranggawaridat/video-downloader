@@ -27,7 +27,13 @@ type Handler struct {
 
 // New membangun router lengkap API + static file frontend.
 func New(pool *pgxpool.Pool, cfg config.Config, log *slog.Logger) http.Handler {
-	h := &Handler{
+	return NewHandler(pool, cfg, log).Routes()
+}
+
+// NewHandler membangun Handler. Diekspor supaya cmd/api dapat menjalankan
+// background job (reconciler) yang berbagi pool & client Midtrans.
+func NewHandler(pool *pgxpool.Pool, cfg config.Config, log *slog.Logger) *Handler {
+	return &Handler{
 		pool: pool,
 		cfg:  cfg,
 		yt: ytdlp.Options{
@@ -38,7 +44,10 @@ func New(pool *pgxpool.Pool, cfg config.Config, log *slog.Logger) http.Handler {
 		midtrans: midtrans.New(cfg.MidtransServerKey, cfg.MidtransProduction),
 		log:      log,
 	}
+}
 
+// Routes memasang seluruh endpoint API + static handler.
+func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer, h.logMiddleware, device.Middleware, h.sessionMiddleware)
 

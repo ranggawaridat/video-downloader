@@ -42,9 +42,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	apiHandler := httpapi.NewHandler(pool, cfg, logger)
+	// Pemulihan pembayaran nyangkut bila notifikasi Midtrans tidak sampai.
+	apiHandler.StartReconciler(ctx)
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           httpapi.New(pool, cfg, logger),
+		Handler:           apiHandler.Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

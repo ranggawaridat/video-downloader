@@ -545,7 +545,8 @@ function renderPlans(plans) {
           if (res.payment_url) {
             // Mode gateway: buka Snap di tab baru, lalu polling status.
             window.open(res.payment_url, "_blank");
-            await pollPayment(res.payment_id);
+            const status = await pollPayment(res.payment_id);
+            notifyPayment(status);
             await refreshMe();
           } else {
             alert("Langganan " + p.name + " aktif! Selamat menikmati. 🎉");
@@ -569,6 +570,7 @@ function renderPlans(plans) {
 
 // pollPayment: polling status payment setiap 3 detik (maks ~3 menit)
 // sampai paid / failed, atau user menutup halaman Snap.
+// Resolve dengan status akhir: "paid" | "failed" | "timeout".
 function pollPayment(id) {
   return new Promise((resolve) => {
     let elapsed = 0;
@@ -578,24 +580,62 @@ function pollPayment(id) {
         const pm = await api("/api/billing/payments/" + id);
         if (pm.status === "paid") {
           clearInterval(iv);
-          alert("Pembayaran diterima — langganan aktif! 🎉");
-          resolve();
-        } else if (pm.status === "failed" || pm.status === "expired") {
+          resolve("paid");
+        } else if (pm.status === "failed" || pm.status === "expired" || pm.status === "refunded") {
           clearInterval(iv);
-          alert("Pembayaran gagal atau dibatalkan. Coba lagi ya.");
-          resolve();
+          resolve("failed");
         }
       } catch { /* biarkan polling lanjut */ }
       if (elapsed >= 180) {
         clearInterval(iv);
-        alert("Menunggu pembayaran terlalu lama. Jika sudah membayar, " +
-              "halaman ini bisa diperbarui setelah notifikasi masuk.");
-        resolve();
+        resolve("timeout");
       }
     }, 3000);
   });
 }
 
-refreshMe();
-refreshHistory();
-refreshPlans();
+function notifyPayment(status) {
+  if (status === "paid") {
+    alert("Pembayaran diterima — langganan aktif! 🎉");
+  } else if (status === "failed") {
+    alert("Pembayaran gagal atau dibatalkan. Coba lagi ya.");
+  } else {
+    alert("Menunggu pembayaran terlalu lama. Jika sudah membayar, " +
+          "halaman ini bisa diperbarui setelah notifikasi masuk.");
+  }
+}
+
+// handlePaymentReturn: Snap mengarahkan browser kembali ke
+// /?payment=<id> setelah pembayaran (callback finish). Deteksi di sini,
+// lalu polling status sampai lunas dan segarkan tampilan.
+async function handlePaymentReturn() {
+  const params = new URLSearchParams(location.search);
+  const pid = params.get("payment");
+  if (!pid) return;
+  history.replaceState(null, "", location.pathname); // bersihkan URL
+
+  await refreshMe();
+  if (!me || !me.authenticated) return;
+
+  let status = "pending";
+  try {
+    const pm = await api("/api/billing/payments/" + pid);
+    status = pm.status;
+  } catch { /* lanjut ke polling */ }
+
+  if (status !== "paid" && status !== "failed") {
+    status = await pollPayment(pid);
+  }
+  notifyPayment(status);
+  await refreshMe();
+  await refreshHistory();
+}
+
+async function init() {
+  await refreshMe();
+  await refreshHistory();
+  await refreshPlans();
+  await handlePaymentReturn();
+}
+
+init();
