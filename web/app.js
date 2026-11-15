@@ -5,9 +5,11 @@ const $ = (sel) => document.querySelector(sel);
 
 const QUALITY_LABEL = { audio: "MP3" };
 
-let current = null;          // hasil analisis {url, provider, title, thumbnail, duration, heights, max_height}
-let selectedFormat = "720";  // pilihan kualitas aktif
-let pollTimer = null;        // interval polling riwayat saat ada job aktif
+let current = null;        // hasil analisis metadata
+let selectedFormat = "720";
+let pollTimer = null;      // polling riwayat saat ada job aktif
+let me = null;             // {authenticated, email, plan, used_today, remaining, ...}
+let authMode = "login";    // login | register
 
 /* ---------- util ---------- */
 
@@ -17,6 +19,11 @@ function fmtBytes(n) {
   let i = 0, v = n;
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
   return v.toFixed(v >= 10 || i === 0 ? 0 : 1) + " " + units[i];
+}
+
+function fmtIDR(n) {
+  if (!n) return "Gratis";
+  return "Rp " + n.toLocaleString("id-ID");
 }
 
 function fmtDuration(s) {
@@ -50,6 +57,99 @@ async function api(path, opts = {}) {
   }
   return data;
 }
+
+/* ---------- sesi & kuota (header) ---------- */
+
+async function refreshMe() {
+  try { me = await api("/api/me"); } catch { me = null; }
+  renderHeader();
+  renderQuota();
+  renderPlans(); // status tombol bergantung plan aktif
+}
+
+function renderHeader() {
+  const el = $("#header-actions");
+  el.innerHTML = "";
+  if (me && me.authenticated) {
+    const badge = document.createElement("span");
+    badge.className = "plan-badge";
+    badge.textContent = me.plan.name;
+    const email = document.createElement("span");
+    email.className = "user-email";
+    email.textContent = me.email;
+    const out = document.createElement("button");
+    out.className = "btn ghost small";
+    out.textContent = "Keluar";
+    out.addEventListener("click", async () => {
+      try { await api("/api/auth/logout", { method: "POST" }); } catch { /* */ }
+      hideAuth();
+      await refreshMe();
+      await refreshHistory();
+    });
+    el.append(badge, email, out);
+  } else {
+    const btn = document.createElement("button");
+    btn.className = "btn small";
+    btn.textContent = "Masuk";
+    btn.addEventListener("click", () => showAuth("login"));
+    el.appendChild(btn);
+  }
+}
+
+function renderQuota() {
+  const el = $("#quota");
+  if (!me) { el.textContent = ""; return; }
+  el.textContent =
+    `${me.plan.name} — ${me.remaining}/${me.plan.daily_limit} unduhan hari ini`;
+}
+
+/* ---------- auth ---------- */
+
+function showAuth(mode) {
+  authMode = mode;
+  $("#auth-title").textContent = mode === "login" ? "Masuk" : "Daftar";
+  $("#auth-submit").textContent = mode === "login" ? "Masuk" : "Daftar";
+  $("#auth-switch-label").textContent = mode === "login" ? "Belum punya akun?" : "Sudah punya akun?";
+  $("#auth-toggle").textContent = mode === "login" ? "Daftar" : "Masuk";
+  $("#auth-error").classList.add("hidden");
+  $("#auth").classList.remove("hidden");
+  $("#auth").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function hideAuth() {
+  $("#auth").classList.add("hidden");
+}
+
+$("#auth-toggle").addEventListener("click", (e) => {
+  e.preventDefault();
+  showAuth(authMode === "login" ? "register" : "login");
+});
+
+$("#auth-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("#auth-submit");
+  btn.disabled = true;
+  const path = authMode === "login" ? "/api/auth/login" : "/api/auth/register";
+  try {
+    await api(path, {
+      method: "POST",
+      body: JSON.stringify({
+        email: $("#auth-email").value.trim(),
+        password: $("#auth-pass").value,
+      }),
+    });
+    hideAuth();
+    $("#auth-form").reset();
+    await refreshMe();
+    await refreshHistory(); // riwayat anonim di-claim ke akun
+  } catch (err) {
+    const el = $("#auth-error");
+    el.textContent = err.message;
+    el.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 /* ---------- analisis URL ---------- */
 
@@ -139,10 +239,14 @@ $("#download-btn").addEventListener("click", async () => {
     $("#url").value = "";
     current = null;
     await refreshHistory();
-    refreshQuota();
+    refreshMe();
   } catch (err) {
     const el = $("#result-error");
-    el.textContent = err.message;
+    if (err.code === "quota_exceeded" || err.code === "quality_not_allowed") {
+      el.textContent = err.message + " — lihat paket di bawah untuk upgrade.";
+    } else {
+      el.textContent = err.message;
+    }
     el.classList.remove("hidden");
   } finally {
     btn.disabled = false;
@@ -185,7 +289,6 @@ function renderHistory(items) {
     const row = document.createElement("div");
     row.className = "download-item card";
 
-    // thumbnail
     const thumb = document.createElement("div");
     thumb.className = "dl-thumb";
     if (it.thumbnail) {
@@ -197,7 +300,6 @@ function renderHistory(items) {
     }
     row.appendChild(thumb);
 
-    // info utama
     const info = document.createElement("div");
     info.className = "dl-info";
 
@@ -250,7 +352,6 @@ function renderHistory(items) {
     }
     row.appendChild(info);
 
-    // aksi
     const actions = document.createElement("div");
     actions.className = "dl-actions";
 
@@ -286,7 +387,7 @@ function renderHistory(items) {
             body: JSON.stringify({ url: it.url, format: it.format }),
           });
           refreshHistory();
-          refreshQuota();
+          refreshMe();
         } catch (err) { alert(err.message); }
       });
       actions.appendChild(retry);
@@ -301,17 +402,107 @@ function shortURL(u) {
   return u.length > 60 ? u.slice(0, 57) + "…" : u;
 }
 
-/* ---------- kuota ---------- */
+/* ---------- paket & langganan ---------- */
 
-async function refreshQuota() {
+async function refreshPlans() {
+  let plans = [];
   try {
-    const q = await api("/api/me");
-    $("#quota").textContent =
-      `Kuota gratis: ${q.remaining}/${q.daily_limit} unduhan hari ini`;
+    const data = await api("/api/plans");
+    plans = data.items || [];
   } catch { /* */ }
+  renderPlans(plans);
+}
+
+function renderPlans(plans) {
+  const list = $("#plan-list");
+  if (!plans) return; // belum ada data
+  list.innerHTML = "";
+
+  for (const p of plans) {
+    const card = document.createElement("div");
+    card.className = "plan-card card";
+    if (me && me.plan && me.plan.code === p.code) {
+      card.classList.add("current");
+    }
+
+    const name = document.createElement("div");
+    name.className = "plan-name";
+    name.textContent = p.name;
+
+    const price = document.createElement("div");
+    price.className = "plan-price";
+    price.textContent = fmtIDR(p.price_idr) + (p.price_idr ? " / bulan" : "");
+
+    const feats = document.createElement("div");
+    feats.className = "plan-feats";
+    const featLines = [
+      `${p.daily_limit} unduhan / hari`,
+      `hingga ${p.max_height}p` + (p.max_height >= 1080 ? " (4K menyusul)" : ""),
+      `file tersimpan ${p.retention_hours} jam`,
+    ];
+    if (p.price_idr) featLines.push("tanpa iklan (segera)");
+    feats.innerHTML = "";
+    for (const line of featLines) {
+      const d = document.createElement("div");
+      d.textContent = "✓ " + line;
+      feats.appendChild(d);
+    }
+
+    const isCurrent = me && me.plan && me.plan.code === p.code;
+    const action = document.createElement("div");
+    action.className = "plan-action";
+
+    if (isCurrent) {
+      const tag = document.createElement("div");
+      tag.className = "current-tag";
+      tag.textContent = "✓ Paket aktif";
+      action.appendChild(tag);
+      if (p.price_idr > 0) {
+        const cancel = document.createElement("button");
+        cancel.className = "btn ghost small";
+        cancel.textContent = "Batalkan langganan";
+        cancel.addEventListener("click", async () => {
+          if (!confirm("Batalkan langganan? Manfaat Pro langsung berhenti.")) return;
+          try {
+            await api("/api/billing/cancel", { method: "POST" });
+            await refreshMe();
+          } catch (err) { alert(err.message); }
+        });
+        action.appendChild(cancel);
+      }
+    } else if (p.price_idr > 0) {
+      const btn = document.createElement("button");
+      btn.className = "btn primary wide";
+      btn.textContent = "Berlangganan";
+      btn.addEventListener("click", async () => {
+        if (!me || !me.authenticated) {
+          showAuth("login");
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await api("/api/billing/checkout", {
+            method: "POST",
+            body: JSON.stringify({ plan_code: p.code }),
+          });
+          alert("Langganan " + p.name + " aktif! Selamat menikmati. 🎉");
+          await refreshMe();
+        } catch (err) {
+          alert(err.message);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+      action.appendChild(btn);
+    }
+
+    card.append(name, price, feats, action);
+    list.appendChild(card);
+  }
 }
 
 /* ---------- init ---------- */
 
+refreshMe();
 refreshHistory();
-refreshQuota();
+refreshPlans();

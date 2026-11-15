@@ -37,10 +37,16 @@ func New(pool *pgxpool.Pool, cfg config.Config, log *slog.Logger) http.Handler {
 	}
 
 	r := chi.NewRouter()
-	r.Use(middleware.Recoverer, h.logMiddleware, device.Middleware)
+	r.Use(middleware.Recoverer, h.logMiddleware, device.Middleware, h.sessionMiddleware)
 
 	r.Get("/api/health", h.health)
 	r.Get("/api/me", h.me)
+	r.Get("/api/plans", h.listPlans)
+	r.Post("/api/auth/register", h.register)
+	r.Post("/api/auth/login", h.login)
+	r.Post("/api/auth/logout", h.logout)
+	r.Post("/api/billing/checkout", h.checkout)
+	r.Post("/api/billing/cancel", h.cancelSubscription)
 	r.Post("/api/metadata", h.metadata)
 	r.Post("/api/downloads", h.createDownload)
 	r.Get("/api/downloads", h.listDownloads)

@@ -35,6 +35,20 @@ header {
   border-bottom: 1px solid var(--line);
 }
 
+.header-actions { display: flex; align-items: center; gap: 10px; }
+.user-email { color: var(--muted); font-size: 13px; }
+.plan-badge {
+  background: rgba(109, 141, 255, .15);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
 .logo {
   font-weight: 800;
   font-size: 20px;
@@ -214,6 +228,46 @@ main {
   border: 1px dashed var(--line);
   border-radius: 14px;
 }
+
+/* Auth */
+#auth { margin-top: 20px; max-width: 440px; }
+#auth h2 { margin: 0 0 14px; font-size: 18px; }
+#auth input {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card-2);
+  color: var(--text);
+  font-size: 14.5px;
+  outline: none;
+}
+#auth input:focus { border-color: var(--accent); }
+.auth-switch { color: var(--muted); font-size: 13px; margin-top: 12px; }
+.auth-switch a { color: var(--accent); text-decoration: none; font-weight: 600; }
+
+/* Paket */
+#pricing { margin-top: 44px; }
+#pricing h2 { font-size: 18px; margin-bottom: 14px; }
+.plan-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.plan-card { display: flex; flex-direction: column; }
+.plan-card.current { border-color: rgba(62, 207, 142, .5); }
+.plan-name { font-weight: 700; font-size: 16px; }
+.plan-price { font-size: 22px; font-weight: 700; margin: 6px 0 4px; }
+.plan-feats {
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.8;
+  margin-bottom: 14px;
+  flex: 1;
+}
+.plan-action { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.current-tag { color: var(--ok); font-size: 13px; font-weight: 600; }
 
 footer {
   border-top: 1px solid var(--line);

@@ -58,6 +58,19 @@ func scanDownload(row pgx.Row) (downloadDTO, error) {
 	return d, err
 }
 
+// ownershipClause: baris milik user login, atau (untuk anonim) milik device ini.
+const ownershipClause = `
+	($1::uuid IS NOT NULL AND user_id = $1::uuid)
+	OR (user_id IS NULL AND device_id = $2)`
+
+// userIDParam mengembalikan uuid user (string) atau nil untuk anonim.
+func userIDParam(sub *subject) any {
+	if sub.UserID == "" {
+		return nil
+	}
+	return sub.UserID
+}
+
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	if err := h.pool.Ping(r.Context()); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "Database tidak tersedia")
@@ -66,15 +79,19 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// me: info kuota perangkat untuk frontend.
+// me: identitas, plan aktif, dan kuota hari ini.
 func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
-	deviceID := device.FromContext(r.Context())
+	sub, err := h.currentSubject(r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
+		return
+	}
 	day := time.Now().UTC().Format("2006-01-02")
 
 	var used int
-	err := h.pool.QueryRow(r.Context(),
-		"SELECT downloads FROM usage_daily WHERE device_id = $1 AND day = $2",
-		deviceID, day).Scan(&used)
+	err = h.pool.QueryRow(r.Context(),
+		"SELECT downloads FROM usage_daily WHERE subject = $1 AND day = $2",
+		sub.Key, day).Scan(&used)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
 		return
@@ -82,7 +99,7 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		used = 0
 	}
-	remaining := h.cfg.FreeDailyLimit - used
+	remaining := sub.Plan.DailyLimit - used
 	if remaining < 0 {
 		remaining = 0
 	}
@@ -90,15 +107,24 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 	next := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"used_today":  used,
-		"daily_limit": h.cfg.FreeDailyLimit,
-		"remaining":   remaining,
-		"max_height":  h.cfg.MaxHeight,
-		"resets_at":   next.Format(time.RFC3339),
+		"authenticated": sub.UserID != "",
+		"email":         sub.Email,
+		"plan": map[string]any{
+			"code":            sub.Plan.Code,
+			"name":            sub.Plan.Name,
+			"daily_limit":     sub.Plan.DailyLimit,
+			"max_height":      sub.Plan.MaxHeight,
+			"retention_hours": sub.Plan.RetentionHours,
+			"price_idr":       sub.Plan.PriceIDR,
+		},
+		"used_today": used,
+		"remaining":  remaining,
+		"resets_at":  next.Format(time.RFC3339),
 	})
 }
 
 // metadata: analisis URL jadi judul/thumbnail/daftar resolusi.
+// Batas resolusi sesuai plan pemohon.
 func (h *Handler) metadata(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		URL string `json:"url"`
@@ -109,6 +135,12 @@ func (h *Handler) metadata(w http.ResponseWriter, r *http.Request) {
 	u, err := validate.URL(req.URL)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_url", err.Error())
+		return
+	}
+
+	sub, err := h.currentSubject(r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
 		return
 	}
 
@@ -127,7 +159,7 @@ func (h *Handler) metadata(w http.ResponseWriter, r *http.Request) {
 		"thumbnail":  m.Thumbnail,
 		"duration":   int(m.Duration),
 		"heights":    ytdlp.Heights(m),
-		"max_height": h.cfg.MaxHeight,
+		"max_height": sub.Plan.MaxHeight,
 	})
 }
 
@@ -151,19 +183,28 @@ func (h *Handler) createDownload(w http.ResponseWriter, r *http.Request) {
 			"Format harus 360, 480, 720, 1080, atau audio")
 		return
 	}
-	if req.Format != "audio" && parseHeight(req.Format) > h.cfg.MaxHeight {
+
+	sub, err := h.currentSubject(r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
+		return
+	}
+	plan := sub.Plan
+	if req.Format != "audio" && parseHeight(req.Format) > plan.MaxHeight {
 		writeError(w, http.StatusBadRequest, "quality_not_allowed",
-			"Kualitas "+req.Format+"p belum tersedia di paket gratis (maksimal "+strconv.Itoa(h.cfg.MaxHeight)+"p)")
+			"Kualitas "+req.Format+"p belum tersedia di paket "+plan.Name+
+				" (maksimal "+strconv.Itoa(plan.MaxHeight)+"p)")
 		return
 	}
 
-	deviceID := device.FromContext(r.Context())
-
-	// Satu unduhan aktif per URL per perangkat.
+	// Satu unduhan aktif per URL per identitas.
 	var existing string
-	err = h.pool.QueryRow(r.Context(),
-		"SELECT id::text FROM downloads WHERE device_id = $1 AND url = $2 AND status IN ('queued','running')",
-		deviceID, u.String()).Scan(&existing)
+	err = h.pool.QueryRow(r.Context(), `
+		SELECT id::text FROM downloads
+		WHERE status IN ('queued','running')
+		  AND url = $3
+		  AND `+ownershipClause,
+		userIDParam(sub), device.FromContext(r.Context()), u.String()).Scan(&existing)
 	if err == nil {
 		writeError(w, http.StatusConflict, "duplicate", "Sudah ada proses unduhan untuk link ini")
 		return
@@ -177,16 +218,16 @@ func (h *Handler) createDownload(w http.ResponseWriter, r *http.Request) {
 	day := time.Now().UTC().Format("2006-01-02")
 	var used int
 	err = h.pool.QueryRow(r.Context(), `
-		INSERT INTO usage_daily (device_id, day, downloads)
+		INSERT INTO usage_daily (subject, day, downloads)
 		VALUES ($1, $2::date, 1)
-		ON CONFLICT (device_id, day)
+		ON CONFLICT (subject, day)
 		DO UPDATE SET downloads = usage_daily.downloads + 1
 		WHERE usage_daily.downloads < $3
 		RETURNING downloads`,
-		deviceID, day, h.cfg.FreeDailyLimit).Scan(&used)
+		sub.Key, day, plan.DailyLimit).Scan(&used)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusTooManyRequests, "quota_exceeded",
-			"Kuota unduhan gratis hari ini sudah habis. Coba lagi besok.")
+			"Kuota "+plan.Name+" hari ini sudah habis. Coba lagi besok.")
 		return
 	}
 	if err != nil {
@@ -194,10 +235,14 @@ func (h *Handler) createDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Retensi file mengikuti plan pada saat job dibuat.
 	var id string
-	err = h.pool.QueryRow(r.Context(),
-		"INSERT INTO downloads (device_id, url, format) VALUES ($1, $2, $3) RETURNING id::text",
-		deviceID, u.String(), req.Format).Scan(&id)
+	err = h.pool.QueryRow(r.Context(), `
+		INSERT INTO downloads (device_id, user_id, url, format, expires_at)
+		VALUES ($1, $2::uuid, $3, $4, now() + make_interval(hours => $5))
+		RETURNING id::text`,
+		device.FromContext(r.Context()), userIDParam(sub), u.String(), req.Format,
+		plan.RetentionHours).Scan(&id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
 		return
@@ -206,9 +251,14 @@ func (h *Handler) createDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listDownloads(w http.ResponseWriter, r *http.Request) {
-	deviceID := device.FromContext(r.Context())
+	sub, err := h.currentSubject(r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
+		return
+	}
 	rows, err := h.pool.Query(r.Context(), selectDownloads+`
-		WHERE device_id = $1 ORDER BY created_at DESC LIMIT 20`, deviceID)
+		WHERE `+ownershipClause+` ORDER BY created_at DESC LIMIT 20`,
+		userIDParam(sub), device.FromContext(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
 		return
@@ -233,9 +283,14 @@ func (h *Handler) listDownloads(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getDownload(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	deviceID := device.FromContext(r.Context())
-	d, err := scanDownload(h.pool.QueryRow(r.Context(), selectDownloads+
-		" WHERE id = $1 AND device_id = $2", id, deviceID))
+	sub, err := h.currentSubject(r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
+		return
+	}
+	d, err := scanDownload(h.pool.QueryRow(r.Context(), selectDownloads+`
+		WHERE id = $3 AND `+ownershipClause,
+		userIDParam(sub), device.FromContext(r.Context()), id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "Unduhan tidak ditemukan")
 		return
@@ -249,11 +304,15 @@ func (h *Handler) getDownload(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) cancelDownload(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	deviceID := device.FromContext(r.Context())
+	sub, err := h.currentSubject(r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
+		return
+	}
 	ct, err := h.pool.Exec(r.Context(), `
 		UPDATE downloads SET status = 'canceled', finished_at = now()
-		WHERE id = $1 AND device_id = $2 AND status IN ('queued','running')`,
-		id, deviceID)
+		WHERE id = $3 AND status IN ('queued','running') AND `+ownershipClause,
+		userIDParam(sub), device.FromContext(r.Context()), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
 		return
@@ -265,21 +324,25 @@ func (h *Handler) cancelDownload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": "canceled"})
 }
 
-// serveFile mengirim file hanya ke pemilik unduhan (cek device_id).
+// serveFile mengirim file hanya ke pemilik unduhan.
 func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	deviceID := device.FromContext(r.Context())
 
-	var owner, storagePath, filename, status string
-	err := h.pool.QueryRow(r.Context(),
-		"SELECT device_id, storage_path, filename, status FROM downloads WHERE id = $1", id,
-	).Scan(&owner, &storagePath, &filename, &status)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && owner != deviceID) {
-		writeError(w, http.StatusNotFound, "not_found", "File tidak ditemukan")
+	var ownerUserID, rowDevice, storagePath, filename, status string
+	err := h.pool.QueryRow(r.Context(), `
+		SELECT COALESCE(user_id::text, ''), device_id, storage_path, filename, status
+		FROM downloads WHERE id = $1`, id,
+	).Scan(&ownerUserID, &rowDevice, &storagePath, &filename, &status)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
 		return
 	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
+
+	authUser := userFromContext(r.Context())
+	isOwner := (ownerUserID != "" && authUser != nil && ownerUserID == authUser.ID) ||
+		(ownerUserID == "" && rowDevice == device.FromContext(r.Context()))
+	if errors.Is(err, pgx.ErrNoRows) || !isOwner {
+		writeError(w, http.StatusNotFound, "not_found", "File tidak ditemukan")
 		return
 	}
 	if status != "completed" || storagePath == "" {

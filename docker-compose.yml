@@ -24,10 +24,8 @@ services:
       ADDR: ":8080"
       FILES_DIR: /data/files
       STATIC_DIR: /srv/web
-      FREE_DAILY_LIMIT: ${FREE_DAILY_LIMIT:-3}
-      MAX_HEIGHT: ${MAX_HEIGHT:-720}
+      BILLING_MODE: ${BILLING_MODE:-manual}
       MAX_FILESIZE_MB: ${MAX_FILESIZE_MB:-500}
-      FILE_TTL_HOURS: ${FILE_TTL_HOURS:-6}
       JOB_TIMEOUT_MINUTES: ${JOB_TIMEOUT_MINUTES:-20}
       MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
     volumes:
@@ -46,10 +44,8 @@ services:
     environment:
       DATABASE_URL: postgres://videodl:${POSTGRES_PASSWORD:-videodl}@postgres:5432/videodl?sslmode=disable
       FILES_DIR: /data/files
-      FREE_DAILY_LIMIT: ${FREE_DAILY_LIMIT:-3}
-      MAX_HEIGHT: ${MAX_HEIGHT:-720}
+      BILLING_MODE: ${BILLING_MODE:-manual}
       MAX_FILESIZE_MB: ${MAX_FILESIZE_MB:-500}
-      FILE_TTL_HOURS: ${FILE_TTL_HOURS:-6}
       JOB_TIMEOUT_MINUTES: ${JOB_TIMEOUT_MINUTES:-20}
       MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}

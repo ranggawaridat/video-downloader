@@ -9,7 +9,7 @@
 <body>
   <header>
     <div class="logo">VidGrab</div>
-    <div class="quota" id="quota"></div>
+    <div class="header-actions" id="header-actions"></div>
   </header>
 
   <main>
@@ -36,14 +36,33 @@
       <button id="download-btn" class="btn primary wide">Unduh sekarang</button>
     </section>
 
+    <section id="auth" class="card hidden">
+      <h2 id="auth-title">Masuk</h2>
+      <form id="auth-form" autocomplete="on">
+        <input id="auth-email" type="email" placeholder="email" required>
+        <input id="auth-pass" type="password" placeholder="password (min. 8 karakter)" required minlength="8">
+        <button type="submit" id="auth-submit" class="btn primary wide">Masuk</button>
+      </form>
+      <div id="auth-error" class="error hidden"></div>
+      <div class="auth-switch">
+        <span id="auth-switch-label">Belum punya akun?</span>
+        <a href="#" id="auth-toggle">Daftar</a>
+      </div>
+    </section>
+
     <section id="history">
       <h2>Riwayat unduhan</h2>
       <div id="history-list"></div>
     </section>
+
+    <section id="pricing">
+      <h2>Paket</h2>
+      <div id="plan-list" class="plan-list"></div>
+    </section>
   </main>
 
   <footer>
-    <span>VidGrab MVP — file otomatis dihapus dari server setelah beberapa jam.</span>
+    <span>VidGrab — file otomatis dihapus sesuai masa retensi paket.</span>
     <span>Gunakan hanya untuk konten yang berhak Anda unduh.</span>
   </footer>
 

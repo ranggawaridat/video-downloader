@@ -235,10 +235,9 @@ func (w *Worker) process(ctx context.Context, j job) {
 	_, err = w.pool.Exec(context.WithoutCancel(jobCtx), `
 		UPDATE downloads
 		SET status = 'completed', progress = 100, storage_path = $1, filename = $2,
-		    file_size = $3, finished_at = now(),
-		    expires_at = now() + make_interval(hours => $4)
-		WHERE id = $5 AND status = 'running'`,
-		j.ID+ext, name, size, int(w.cfg.FileTTL.Hours()), j.ID)
+		    file_size = $3, finished_at = now()
+		WHERE id = $4 AND status = 'running'`,
+		j.ID+ext, name, size, j.ID)
 	if err != nil {
 		w.log.Error("mark completed failed", "id", j.ID, "err", err)
 		return
