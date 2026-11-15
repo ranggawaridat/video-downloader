@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -35,25 +37,43 @@ func NewClient(token string) *Client {
 func (c *Client) Configured() bool { return c != nil && c.token != "" }
 
 func (c *Client) callJSON(ctx context.Context, method string, payload any, out any) error {
+	return c.callJSONTimeout(ctx, method, payload, out, 35*time.Second)
+}
+
+// callJSONTimeout memakai timeout eksplisit; long polling getUpdates butuh
+// timeout lebih panjang daripada timeout server Telegram.
+func (c *Client) callJSONTimeout(ctx context.Context, method string, payload any, out any, timeout time.Duration) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	cctx, cancel := context.WithTimeout(ctx, 35*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodPost,
 		apiBase+c.token+"/"+method, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return redact(err, c.token)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return c.do(req, out)
 }
 
+// redact membuang URL (yang memuat token) dari error jaringan.
+func redact(err error, token string) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		err = ue.Err // hanya penyebabnya, tanpa URL
+	}
+	if err == nil {
+		return errors.New("telegram: jaringan gagal")
+	}
+	return fmt.Errorf("telegram: %w", err)
+}
+
 func (c *Client) do(req *http.Request, out any) error {
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return redact(err, c.token)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
@@ -128,15 +148,16 @@ type User struct {
 }
 
 // GetUpdates long polling; timeout detik di server Telegram.
+// Timeout client 45s > 30s server agar long poll tidak terputus.
 func (c *Client) GetUpdates(ctx context.Context, offset int64) ([]Update, error) {
 	var out struct {
 		Result []Update `json:"result"`
 	}
-	err := c.callJSON(ctx, "getUpdates", map[string]any{
+	err := c.callJSONTimeout(ctx, "getUpdates", map[string]any{
 		"offset":          offset,
 		"timeout":         30,
 		"allowed_updates": []string{"message", "callback_query"},
-	}, &out)
+	}, &out, 45*time.Second)
 	if err != nil {
 		return nil, err
 	}
