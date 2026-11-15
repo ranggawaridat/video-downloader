@@ -16,6 +16,10 @@ func (h *Handler) staticHandler() http.Handler {
 			http.ServeFile(w, r, filepath.Join(h.cfg.StaticDir, "index.html"))
 			return
 		}
+		if r.URL.Path == "/admin" || r.URL.Path == "/admin/" {
+			http.ServeFile(w, r, filepath.Join(h.cfg.StaticDir, "admin.html"))
+			return
+		}
 		files.ServeHTTP(w, r)
 	})
 }

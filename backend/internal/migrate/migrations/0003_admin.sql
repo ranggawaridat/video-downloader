@@ -1,0 +1,2 @@
+-- Role admin untuk panel admin.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user'; -- user|admin

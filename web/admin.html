@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VidGrab Admin</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body class="admin-body">
+  <header>
+    <div class="logo">VidGrab <span class="admin-tag">Admin</span></div>
+    <div class="header-actions" id="admin-user"></div>
+  </header>
+
+  <main>
+    <div id="admin-gate" class="card hidden">
+      <h2>Masuk Admin</h2>
+      <p class="sub">Gunakan akun dengan role admin.</p>
+      <form id="admin-login-form" autocomplete="on">
+        <input id="gate-email" type="email" placeholder="email admin" required>
+        <input id="gate-pass" type="password" placeholder="password" required>
+        <button type="submit" class="btn primary wide">Masuk</button>
+      </form>
+      <div id="gate-error" class="error hidden"></div>
+    </div>
+
+    <div id="admin-app" class="hidden">
+      <nav class="tabs">
+        <button class="tab active" data-tab="overview">Ringkasan</button>
+        <button class="tab" data-tab="users">Pengguna</button>
+        <button class="tab" data-tab="downloads">Unduhan</button>
+        <button class="tab" data-tab="plans">Paket</button>
+      </nav>
+
+      <section id="tab-overview">
+        <div id="stat-cards" class="stat-grid"></div>
+        <div class="admin-two-col">
+          <div class="card">
+            <h3>Unduhan 14 hari terakhir</h3>
+            <div id="daily-chart" class="daily-chart"></div>
+          </div>
+          <div class="card">
+            <h3>Provider teratas (7 hari)</h3>
+            <div id="top-providers"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Kegagalan terbaru</h3>
+          <div id="failures-table"></div>
+        </div>
+      </section>
+
+      <section id="tab-users" class="hidden">
+        <div class="toolbar">
+          <input id="user-search" type="search" placeholder="Cari email…">
+        </div>
+        <div id="users-table"></div>
+      </section>
+
+      <section id="tab-downloads" class="hidden">
+        <div class="toolbar">
+          <select id="dl-status-filter">
+            <option value="">Semua status</option>
+            <option value="queued">Queued</option>
+            <option value="running">Running</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+            <option value="canceled">Canceled</option>
+            <option value="expired">Expired</option>
+          </select>
+        </div>
+        <div id="downloads-table"></div>
+      </section>
+
+      <section id="tab-plans" class="hidden">
+        <div id="plans-editor"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/admin.js"></script>
+</body>
+</html>

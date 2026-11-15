@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"videodl/backend/internal/auth"
 	"videodl/backend/internal/config"
 	"videodl/backend/internal/db"
 	"videodl/backend/internal/httpapi"
@@ -35,6 +36,11 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("database ready", "addr", cfg.Addr)
+
+	if err := auth.EnsureAdmin(ctx, pool, cfg.AdminEmail, cfg.AdminPassword); err != nil {
+		slog.Error("ensure admin failed", "err", err)
+		os.Exit(1)
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,

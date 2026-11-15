@@ -109,6 +109,7 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"authenticated": sub.UserID != "",
 		"email":         sub.Email,
+		"role":          roleOf(r),
 		"plan": map[string]any{
 			"code":            sub.Plan.Code,
 			"name":            sub.Plan.Name,
@@ -121,6 +122,14 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 		"remaining":  remaining,
 		"resets_at":  next.Format(time.RFC3339),
 	})
+}
+
+// roleOf: role user login ("" untuk anonim) tanpa risiko nil pointer.
+func roleOf(r *http.Request) string {
+	if u := userFromContext(r.Context()); u != nil {
+		return u.Role
+	}
+	return ""
 }
 
 // metadata: analisis URL jadi judul/thumbnail/daftar resolusi.

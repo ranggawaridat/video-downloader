@@ -54,6 +54,16 @@ func New(pool *pgxpool.Pool, cfg config.Config, log *slog.Logger) http.Handler {
 	r.Delete("/api/downloads/{id}", h.cancelDownload)
 	r.Get("/api/files/{id}", h.serveFile)
 
+	r.Route("/api/admin", func(r chi.Router) {
+		r.Use(h.requireAdmin)
+		r.Get("/stats/overview", h.adminOverview)
+		r.Get("/users", h.adminListUsers)
+		r.Post("/users/{id}/grant", h.adminGrantPlan)
+		r.Get("/downloads", h.adminListDownloads)
+		r.Post("/downloads/{id}/retry", h.adminRetryDownload)
+		r.Patch("/plans/{code}", h.adminUpdatePlan)
+	})
+
 	r.Handle("/*", h.staticHandler())
 	return r
 }

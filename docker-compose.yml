@@ -25,6 +25,8 @@ services:
       FILES_DIR: /data/files
       STATIC_DIR: /srv/web
       BILLING_MODE: ${BILLING_MODE:-manual}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@vidgrab.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin12345}
       MAX_FILESIZE_MB: ${MAX_FILESIZE_MB:-500}
       JOB_TIMEOUT_MINUTES: ${JOB_TIMEOUT_MINUTES:-20}
       MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}

@@ -8,12 +8,14 @@ import (
 
 // Config memuat seluruh konfigurasi aplikasi dari environment variable.
 type Config struct {
-	Addr              string        // alamat listen API, mis. ":8080"
-	DatabaseURL       string        // DSN PostgreSQL
-	FilesDir          string        // direktori file hasil download
-	StaticDir         string        // direktori frontend (web) yang disajikan API
-	YtDlpPath         string        // path/nama binary yt-dlp
-	FfmpegPath        string        // path/nama binary ffmpeg
+	Addr              string // alamat listen API, mis. ":8080"
+	DatabaseURL       string // DSN PostgreSQL
+	FilesDir          string // direktori file hasil download
+	StaticDir         string // direktori frontend (web) yang disajikan API
+	YtDlpPath         string // path/nama binary yt-dlp
+	FfmpegPath        string // path/nama binary ffmpeg
+	AdminEmail        string // akun admin dibuat/dipromosikan saat startup (kosong = lewati)
+	AdminPassword     string
 	BillingMode       string        // manual|midtrans|stripe|telegram (manual = aktivasi instan dev)
 	MaxFilesizeMB     int           // batas ukuran file per unduhan (MB)
 	JobTimeout        time.Duration // batas waktu maksimum satu job unduhan
@@ -29,6 +31,8 @@ func Load() Config {
 		StaticDir:         getEnv("STATIC_DIR", "../web"),
 		YtDlpPath:         getEnv("YTDLP_PATH", "yt-dlp"),
 		FfmpegPath:        getEnv("FFMPEG_PATH", "ffmpeg"),
+		AdminEmail:        getEnv("ADMIN_EMAIL", ""),
+		AdminPassword:     getEnv("ADMIN_PASSWORD", ""),
 		BillingMode:       getEnv("BILLING_MODE", "manual"),
 		MaxFilesizeMB:     getEnvInt("MAX_FILESIZE_MB", 500),
 		JobTimeout:        time.Duration(getEnvInt("JOB_TIMEOUT_MINUTES", 20)) * time.Minute,

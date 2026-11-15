@@ -32,6 +32,7 @@ var ErrInvalidCredentials = errors.New("email atau password salah")
 type User struct {
 	ID    string
 	Email string
+	Role  string // user|admin
 }
 
 // ---------- password (argon2id, format PHC) ----------
@@ -117,10 +118,10 @@ func UserBySession(ctx context.Context, pool *pgxpool.Pool, token string) (*User
 	}
 	var u User
 	err := pool.QueryRow(ctx, `
-		SELECT u.id::text, u.email
+		SELECT u.id::text, u.email, u.role
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND s.expires_at > now()`,
-		hashToken(token)).Scan(&u.ID, &u.Email)
+		hashToken(token)).Scan(&u.ID, &u.Email, &u.Role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -136,5 +137,23 @@ func DestroySession(ctx context.Context, pool *pgxpool.Pool, token string) error
 		return nil
 	}
 	_, err := pool.Exec(ctx, "DELETE FROM sessions WHERE token_hash = $1", hashToken(token))
+	return err
+}
+
+// EnsureAdmin membuat atau mempromosikan akun admin dari env saat startup.
+// Dipakai untuk bootstrap; kata sandi tidak diubah jika akun sudah ada.
+func EnsureAdmin(ctx context.Context, pool *pgxpool.Pool, email, password string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" || password == "" {
+		return nil
+	}
+	hash, err := HashPassword(password)
+	if err != nil {
+		return err
+	}
+	_, err = pool.Exec(ctx, `
+		INSERT INTO users (email, password_hash, role)
+		VALUES ($1, $2, 'admin')
+		ON CONFLICT (email) DO UPDATE SET role = 'admin'`, email, hash)
 	return err
 }
