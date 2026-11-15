@@ -1,7 +1,7 @@
 // Package billing: plan, langganan, dan entitlement.
 //
 // Provider pembayaran: saat ini hanya "manual" (aktivasi instan untuk
-// development/admin). Midtrans/Stripe/Telegram Stars tinggal ditambahkan
+// development/admin). Midtrans/Stripe tinggal ditambahkan
 // sebagai implementasi baru tanpa mengubah plan/entitlement di sini.
 package billing
 

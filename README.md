@@ -21,7 +21,7 @@ job queue berbasis PostgreSQL, dan web frontend sederhana (vanilla HTML/CSS/JS).
 - **Akun**: email + password (Argon2id), session cookie HttpOnly 30 hari.
   Riwayat unduhan anonim di browser otomatis dipindah ke akun saat login/daftar.
 - **Billing** mode `manual`: checkout mengaktifkan langganan instan (30 hari).
-  Ganti ke Midtrans/Stripe/Telegram Stars dengan menambah implementasi provider.
+  Ganti ke Midtrans/Stripe dengan menambah implementasi provider.
 
 ## Menjalankan (Docker Compose)
 
@@ -74,9 +74,6 @@ go run ./cmd/worker
 | GET | `/api/billing/payments/{id}` | Status payment milik sendiri (polling frontend) |
 | POST | `/api/billing/webhook/midtrans` | Notifikasi Midtrans (verifikasi signature, idempotent) |
 | POST | `/api/billing/cancel` | Batalkan langganan aktif |
-| POST | `/api/auth/telegram/link` | Buat kode sekali pakai (10 menit) untuk `/link` di bot |
-| DELETE | `/api/auth/telegram/link` | Lepas ikatan chat Telegram dari akun |
-| GET | `/api/auth/telegram/status` | Status ikatan chat (untuk UI web) |
 | POST | `/api/metadata` | `{url}` → judul, thumbnail, durasi, daftar resolusi |
 | POST | `/api/downloads` | `{url, format}` → buat job (`360`/`480`/`720`/`1080`/`audio`) |
 | GET | `/api/downloads` | Riwayat (user login atau device anonim) |
@@ -97,32 +94,13 @@ Format error: `{"error": {"code": "...", "message": "..."}}`.
 | `BILLING_MODE` | `manual` | `manual` = aktivasi instan (dev/admin); `midtrans` = Midtrans Snap |
 | `MIDTRANS_SERVER_KEY` | — | Server key Midtrans (dashboard → Settings → Access Keys) |
 | `MIDTRANS_IS_PRODUCTION` | `false` | `true` = produksi (`app.midtrans.com`), default sandbox |
-| `TELEGRAM_BOT_TOKEN` | — | Token @BotFather (kosong = bot idle) |
-| `PUBLIC_BASE_URL` | `http://localhost:8080` | URL publik untuk link file dari bot |
+| `PUBLIC_BASE_URL` | `http://localhost:8080` | URL publik app — tujuan redirect Snap setelah pembayaran |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | — | Bootstrap akun admin saat API start (kosong = lewati) |
 | `MAX_FILESIZE_MB` | `500` | Batas ukuran file |
 | `JOB_TIMEOUT_MINUTES` | `20` | Timeout per job |
 | `MAX_ATTEMPTS` | `3` | Percobaan ulang per job |
 | `WORKER_CONCURRENCY` | `2` | Job paralel per worker |
 | `YTDLP_PATH` / `FFMPEG_PATH` | `yt-dlp` / `ffmpeg` | Path binary engine |
-
-## Bot Telegram
-
-Service `bot` (`cmd/telegrambot`, env `TELEGRAM_BOT_TOKEN`) adalah client
-kedua yang memakai logika backend yang sama (tabel `downloads` sebagai
-antrean, kuota atomis di `internal/jobs`). Set `TELEGRAM_BOT_TOKEN` di
-`.env` lalu `docker compose up -d bot`.
-
-- **Tanpa ikatan**: chat = perangkat anonim `tg:<chat_id>` — kuota free plan.
-- **Ikat ke akun web**: situs → panel Telegram → "Ambil kode" → kirim
-  `/link <kode>` ke bot. Setelah itu chat memakai plan & kuota akun.
-- Perintah: `/download <link>` (pilih kualitas via inline keyboard),
-  `/status`, `/unlink`, atau langsung kirim link.
-- **File ≤ 45 MB** dikirim langsung sebagai dokumen; **file besar** dikirim
-  sebagai link `/api/files/{id}?k=<file_key>` (kunci share sekali-generate,
-  divalidasi `serveFile`).
-- Notifikasi hasil job di-poll tiap 5 detik (kolom `notified_at` mencegah
-  dobel). Hanya job yang dibuat via bot yang dinotifikasi.
 
 ## Pembayaran (Midtrans Snap)
 
@@ -197,9 +175,9 @@ docker-compose.yml  postgres + api + worker
 
 ## Batasan MVP & langkah berikutnya
 
-- **Billing manual** — pembayaran nyata (Midtrans/Stripe/Telegram Stars) menyusul;
+- **Billing manual** — pembayaran nyata (Midtrans/Stripe) menyusul;
   struktur provider sudah disiapkan di `internal/billing`.
-- **Login Telegram/Google** — belum; akun email dulu.
+- **Login pihak ketiga** (Google/Apple) — belum; akun email dulu.
 - **Queue sederhana berbasis DB** — siap ditukar ke River/asynq saat skala naik.
 - **Storage lokal** — nanti dipindah ke S3/R2 untuk multi-worker.
 - **Tanpa HTTPS** — pasang reverse proxy (Caddy/Nginx) di depan untuk produksi.

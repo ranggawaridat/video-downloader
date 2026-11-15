@@ -1,6 +1,6 @@
 // Package device mengelola identitas perangkat anonim via cookie.
 // Untuk MVP tanpa akun, kuota dan riwayat unduhan terikat pada cookie ini.
-// Nanti identitas Telegram/email dapat dipetakan ke device_id yang sama.
+// Nanti identitas email dapat dipetakan ke device_id yang sama.
 package device
 
 import (

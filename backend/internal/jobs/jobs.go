@@ -1,6 +1,7 @@
-// Package jobs: pembuatan job unduhan yang dipakai bersama oleh API HTTP
-// dan bot Telegram — validasi URL/format, batas kualitas plan, cek duplikat,
-// kuota harian atomis, dan insert ke tabel downloads (antrean kerja).
+// Package jobs: pembuatan job unduhan terpusat — validasi URL/format,
+// batas kualitas plan, cek duplikat, kuota harian atomis, dan insert ke
+// tabel downloads (antrean kerja). Dipakai handler API; klien lain (mis.
+// integrasi baru) wajib memakai paket ini, bukan menyalin logikanya.
 package jobs
 
 import (
@@ -27,8 +28,8 @@ func (e *Error) Error() string { return e.Code + ": " + e.Message }
 
 // Identity pemesan job: salah satu saja yang diisi.
 type Identity struct {
-	UserID   string // uuid akun web ("", jika anonim)
-	DeviceID string // id perangkat anonim, termasuk "tg:<chat_id>" dari bot
+	UserID   string // uuid akun web ("" jika anonim)
+	DeviceID string // id perangkat anonim dari cookie vd_device
 }
 
 // Subject kunci kuota usage_daily.

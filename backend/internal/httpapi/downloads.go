@@ -173,7 +173,7 @@ func (h *Handler) metadata(w http.ResponseWriter, r *http.Request) {
 }
 
 // createDownload: validasi + kuota atomis + insert job.
-// Logika dipusatkan di internal/jobs agar dipakai bersama bot Telegram.
+// Logika dipusatkan di internal/jobs (validasi, duplikat, kuota).
 func (h *Handler) createDownload(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		URL    string `json:"url"`
@@ -285,16 +285,15 @@ func (h *Handler) cancelDownload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": "canceled"})
 }
 
-// serveFile mengirim file hanya ke pemilik unduhan — atau pembawa
-// kunci share (?k=<file_key>) yang dibuat bot Telegram untuk link.
+// serveFile mengirim file hanya ke pemilik unduhan.
 func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	var ownerUserID, rowDevice, storagePath, filename, status, fileKey string
+	var ownerUserID, rowDevice, storagePath, filename, status string
 	err := h.pool.QueryRow(r.Context(), `
-		SELECT COALESCE(user_id::text, ''), device_id, storage_path, filename, status, file_key
+		SELECT COALESCE(user_id::text, ''), device_id, storage_path, filename, status
 		FROM downloads WHERE id = $1`, id,
-	).Scan(&ownerUserID, &rowDevice, &storagePath, &filename, &status, &fileKey)
+	).Scan(&ownerUserID, &rowDevice, &storagePath, &filename, &status)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
 		return
@@ -303,9 +302,6 @@ func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request) {
 	authUser := userFromContext(r.Context())
 	isOwner := (ownerUserID != "" && authUser != nil && ownerUserID == authUser.ID) ||
 		(ownerUserID == "" && rowDevice == device.FromContext(r.Context()))
-	if !isOwner && fileKey != "" && fileKey == r.URL.Query().Get("k") {
-		isOwner = true // kunci share valid
-	}
 	if errors.Is(err, pgx.ErrNoRows) || !isOwner {
 		writeError(w, http.StatusNotFound, "not_found", "File tidak ditemukan")
 		return
