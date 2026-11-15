@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VidGrab — Video Downloader</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div class="logo">VidGrab</div>
+    <div class="quota" id="quota"></div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Unduh video dari YouTube, TikTok &amp; lainnya</h1>
+      <p class="sub">Tempel link di bawah — gratis, tanpa login.</p>
+      <form id="analyze-form" autocomplete="off">
+        <input id="url" type="text" inputmode="url" placeholder="https://www.youtube.com/watch?v=..." required>
+        <button type="submit" id="analyze-btn" class="btn primary">Analisis</button>
+      </form>
+      <div id="analyze-error" class="error hidden"></div>
+    </section>
+
+    <section id="result" class="card hidden">
+      <div class="result-head">
+        <img id="result-thumb" alt="">
+        <div class="result-text">
+          <div id="result-title" class="result-title"></div>
+          <div id="result-meta" class="dl-meta"></div>
+        </div>
+      </div>
+      <div id="result-chips" class="chips"></div>
+      <div id="result-error" class="error hidden"></div>
+      <button id="download-btn" class="btn primary wide">Unduh sekarang</button>
+    </section>
+
+    <section id="history">
+      <h2>Riwayat unduhan</h2>
+      <div id="history-list"></div>
+    </section>
+  </main>
+
+  <footer>
+    <span>VidGrab MVP — file otomatis dihapus dari server setelah beberapa jam.</span>
+    <span>Gunakan hanya untuk konten yang berhak Anda unduh.</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+name: videodl
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: videodl
+      POSTGRES_USER: videodl
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-videodl}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U videodl -d videodl"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    command: ["/app/api"]
+    environment:
+      DATABASE_URL: postgres://videodl:${POSTGRES_PASSWORD:-videodl}@postgres:5432/videodl?sslmode=disable
+      ADDR: ":8080"
+      FILES_DIR: /data/files
+      STATIC_DIR: /srv/web
+      FREE_DAILY_LIMIT: ${FREE_DAILY_LIMIT:-3}
+      MAX_HEIGHT: ${MAX_HEIGHT:-720}
+      MAX_FILESIZE_MB: ${MAX_FILESIZE_MB:-500}
+      FILE_TTL_HOURS: ${FILE_TTL_HOURS:-6}
+      JOB_TIMEOUT_MINUTES: ${JOB_TIMEOUT_MINUTES:-20}
+      MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
+    volumes:
+      - ./web:/srv/web:ro
+      - files:/data/files
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: ./backend
+    command: ["/app/worker"]
+    environment:
+      DATABASE_URL: postgres://videodl:${POSTGRES_PASSWORD:-videodl}@postgres:5432/videodl?sslmode=disable
+      FILES_DIR: /data/files
+      FREE_DAILY_LIMIT: ${FREE_DAILY_LIMIT:-3}
+      MAX_HEIGHT: ${MAX_HEIGHT:-720}
+      MAX_FILESIZE_MB: ${MAX_FILESIZE_MB:-500}
+      FILE_TTL_HOURS: ${FILE_TTL_HOURS:-6}
+      JOB_TIMEOUT_MINUTES: ${JOB_TIMEOUT_MINUTES:-20}
+      MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+    volumes:
+      - files:/data/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  files:

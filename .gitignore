@@ -1,0 +1,14 @@
+# secrets & local env
+.env
+
+# data runtime lokal (file hasil download, db lokal)
+data/
+backend/data/
+
+# go
+backend/vendor/
+
+# os/editor
+.DS_Store
+Thumbs.db
+*.exe
