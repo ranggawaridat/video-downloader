@@ -35,7 +35,13 @@ header {
   border-bottom: 1px solid var(--line);
 }
 
+.header-right { display: flex; align-items: center; gap: 14px; }
 .header-actions { display: flex; align-items: center; gap: 10px; }
+.quota { color: var(--muted); font-size: 13px; text-align: right; }
+@media (max-width: 620px) {
+  .header-right { gap: 8px; }
+  .quota { display: none; }
+}
 .user-email { color: var(--muted); font-size: 13px; }
 .plan-badge {
   background: rgba(109, 141, 255, .15);

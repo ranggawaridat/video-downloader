@@ -9,6 +9,7 @@ let current = null;        // hasil analisis metadata
 let selectedFormat = "720";
 let pollTimer = null;      // polling riwayat saat ada job aktif
 let me = null;             // {authenticated, email, plan, used_today, remaining, ...}
+let plansCache = [];       // paket terakhir dari /api/plans (untuk re-render)
 let authMode = "login";    // login | register
 
 /* ---------- util ---------- */
@@ -99,7 +100,8 @@ function renderHeader() {
 
 function renderQuota() {
   const el = $("#quota");
-  if (!me) { el.textContent = ""; return; }
+  if (!el) return; // elemen opsional: jangan sampai mematikan render lain
+  if (!me || !me.plan) { el.textContent = ""; return; }
   el.textContent =
     `${me.plan.name} — ${me.remaining}/${me.plan.daily_limit} unduhan hari ini`;
 }
@@ -467,12 +469,16 @@ async function refreshPlans() {
     const data = await api("/api/plans");
     plans = data.items || [];
   } catch { /* */ }
-  renderPlans(plans);
+  plansCache = plans;
+  renderPlans();
 }
 
 function renderPlans(plans) {
   const list = $("#plan-list");
-  if (!plans) return; // belum ada data
+  if (!list) return;
+  if (plans) plansCache = plans;
+  plans = plansCache;
+  if (!plans || !plans.length) return; // belum ada data: jangan kosongkan
   list.innerHTML = "";
 
   for (const p of plans) {
@@ -631,11 +637,13 @@ async function handlePaymentReturn() {
   await refreshHistory();
 }
 
+// init: setiap langkah diisolasi supaya satu kegagalan render tidak
+// menghentikan langkah lain (mis. daftar paket tetap tampil).
 async function init() {
-  await refreshMe();
-  await refreshHistory();
-  await refreshPlans();
-  await handlePaymentReturn();
+  await refreshMe().catch(() => {});
+  await refreshHistory().catch(() => {});
+  await refreshPlans().catch(() => {});
+  await handlePaymentReturn().catch(() => {});
 }
 
 init();

@@ -73,6 +73,8 @@ Run `docker compose build api worker` separately after code changes — `api` an
 
 `web/` is vanilla HTML/CSS/JS served by the API from `STATIC_DIR` (`../web` locally, `/srv/web` mounted in compose). No build step, no bundler — don't add a framework. Quality chips read `max_height` from `/api/metadata`, which is plan-based.
 
+Every render helper must be null-safe (`const el = $("#x"); if (!el) return;`) and `init()` runs each refresh step isolated (`await refreshX().catch(() => {})`). A single missing DOM id used to abort the whole chain, leaving sections (e.g. the pricing list) silently empty. Keep `#quota` (header) and `#plan-list` in sync with `app.js`. `renderPlans()` re-renders from `plansCache`, so calling it without arguments after `refreshMe()` is safe and keeps the "Paket aktif" state correct.
+
 ## Git
 
 - Trunk-based: short-lived branches off `main`, Conventional Commits (`feat:`, `fix:`, `chore:`), squash-merge style commits.
