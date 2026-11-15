@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"videodl/backend/internal/device"
+	"videodl/backend/internal/jobs"
 	"videodl/backend/internal/validate"
 	"videodl/backend/internal/ytdlp"
 )
@@ -173,6 +173,7 @@ func (h *Handler) metadata(w http.ResponseWriter, r *http.Request) {
 }
 
 // createDownload: validasi + kuota atomis + insert job.
+// Logika dipusatkan di internal/jobs agar dipakai bersama bot Telegram.
 func (h *Handler) createDownload(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		URL    string `json:"url"`
@@ -182,77 +183,28 @@ func (h *Handler) createDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := validate.URL(req.URL)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_url", err.Error())
-		return
-	}
-	if !validFormat(req.Format) {
-		writeError(w, http.StatusBadRequest, "invalid_format",
-			"Format harus 360, 480, 720, 1080, atau audio")
-		return
-	}
-
 	sub, err := h.currentSubject(r)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
 		return
 	}
-	plan := sub.Plan
-	if req.Format != "audio" && parseHeight(req.Format) > plan.MaxHeight {
-		writeError(w, http.StatusBadRequest, "quality_not_allowed",
-			"Kualitas "+req.Format+"p belum tersedia di paket "+plan.Name+
-				" (maksimal "+strconv.Itoa(plan.MaxHeight)+"p)")
-		return
-	}
 
-	// Satu unduhan aktif per URL per identitas.
-	var existing string
-	err = h.pool.QueryRow(r.Context(), `
-		SELECT id::text FROM downloads
-		WHERE status IN ('queued','running')
-		  AND url = $3
-		  AND `+ownershipClause,
-		userIDParam(sub), device.FromContext(r.Context()), u.String()).Scan(&existing)
-	if err == nil {
-		writeError(w, http.StatusConflict, "duplicate", "Sudah ada proses unduhan untuk link ini")
-		return
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
-		return
-	}
-
-	// Kuota harian atomis: increment hanya jika masih di bawah batas.
-	day := time.Now().UTC().Format("2006-01-02")
-	var used int
-	err = h.pool.QueryRow(r.Context(), `
-		INSERT INTO usage_daily (subject, day, downloads)
-		VALUES ($1, $2::date, 1)
-		ON CONFLICT (subject, day)
-		DO UPDATE SET downloads = usage_daily.downloads + 1
-		WHERE usage_daily.downloads < $3
-		RETURNING downloads`,
-		sub.Key, day, plan.DailyLimit).Scan(&used)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, http.StatusTooManyRequests, "quota_exceeded",
-			"Kuota "+plan.Name+" hari ini sudah habis. Coba lagi besok.")
-		return
-	}
+	id, err := jobs.Create(r.Context(), h.pool,
+		jobs.Identity{UserID: sub.UserID, DeviceID: device.FromContext(r.Context())},
+		sub.Plan, req.URL, req.Format)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
-		return
-	}
-
-	// Retensi file mengikuti plan pada saat job dibuat.
-	var id string
-	err = h.pool.QueryRow(r.Context(), `
-		INSERT INTO downloads (device_id, user_id, url, format, expires_at)
-		VALUES ($1, $2::uuid, $3, $4, now() + make_interval(hours => $5))
-		RETURNING id::text`,
-		device.FromContext(r.Context()), userIDParam(sub), u.String(), req.Format,
-		plan.RetentionHours).Scan(&id)
-	if err != nil {
+		var je *jobs.Error
+		if errors.As(err, &je) {
+			status := http.StatusBadRequest
+			switch je.Code {
+			case "duplicate":
+				status = http.StatusConflict
+			case "quota_exceeded":
+				status = http.StatusTooManyRequests
+			}
+			writeError(w, status, je.Code, je.Message)
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
 		return
 	}
@@ -333,15 +285,16 @@ func (h *Handler) cancelDownload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": "canceled"})
 }
 
-// serveFile mengirim file hanya ke pemilik unduhan.
+// serveFile mengirim file hanya ke pemilik unduhan — atau pembawa
+// kunci share (?k=<file_key>) yang dibuat bot Telegram untuk link.
 func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	var ownerUserID, rowDevice, storagePath, filename, status string
+	var ownerUserID, rowDevice, storagePath, filename, status, fileKey string
 	err := h.pool.QueryRow(r.Context(), `
-		SELECT COALESCE(user_id::text, ''), device_id, storage_path, filename, status
+		SELECT COALESCE(user_id::text, ''), device_id, storage_path, filename, status, file_key
 		FROM downloads WHERE id = $1`, id,
-	).Scan(&ownerUserID, &rowDevice, &storagePath, &filename, &status)
+	).Scan(&ownerUserID, &rowDevice, &storagePath, &filename, &status, &fileKey)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusInternalServerError, "internal", "Terjadi kesalahan")
 		return
@@ -350,6 +303,9 @@ func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request) {
 	authUser := userFromContext(r.Context())
 	isOwner := (ownerUserID != "" && authUser != nil && ownerUserID == authUser.ID) ||
 		(ownerUserID == "" && rowDevice == device.FromContext(r.Context()))
+	if !isOwner && fileKey != "" && fileKey == r.URL.Query().Get("k") {
+		isOwner = true // kunci share valid
+	}
 	if errors.Is(err, pgx.ErrNoRows) || !isOwner {
 		writeError(w, http.StatusNotFound, "not_found", "File tidak ditemukan")
 		return
@@ -410,31 +366,4 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
 		return err
 	}
 	return nil
-}
-
-func validFormat(f string) bool {
-	if f == "audio" {
-		return true
-	}
-	h := parseHeight(f)
-	return h > 0 && isStandardHeight(h)
-}
-
-func parseHeight(f string) int {
-	n := 0
-	for _, c := range f {
-		if c < '0' || c > '9' {
-			return -1
-		}
-		n = n*10 + int(c-'0')
-	}
-	return n
-}
-
-func isStandardHeight(h int) bool {
-	switch h {
-	case 144, 240, 360, 480, 720, 1080, 1440, 2160:
-		return true
-	}
-	return false
 }

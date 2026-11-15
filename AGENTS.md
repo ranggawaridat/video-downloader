@@ -23,7 +23,7 @@ Run `docker compose build api worker` separately after code changes — `api` an
 
 ## Architecture (non-obvious)
 
-- Go monolith, two binaries from one codebase: `cmd/api` (HTTP + static web) and `cmd/worker` (job processing). Same Docker image, different `command` in compose.
+- Go monolith, three binaries from one codebase: `cmd/api` (HTTP + static web), `cmd/worker` (job processing), and `cmd/telegrambot` (Telegram client). Same Docker image, different `command` in compose.
 - **The `downloads` table is the job queue.** No Redis/River. Worker claims jobs with `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED)` in `internal/worker/worker.go`. DB row status is the source of truth; never add a parallel queue abstraction without migrating this.
 - **Migrations are embedded** in `backend/internal/migrate/migrations/*.sql` and run automatically (with a Postgres advisory lock) at startup by BOTH api and worker. Adding a migration = create `000N_name.sql`; never edit an already-applied file (version is tracked in `schema_migrations`).
 - Worker startup re-queues all `running` jobs (`recoverRunning`) — safe only because MVP assumes a single worker instance. If adding worker replicas, this must be revisited.
@@ -45,6 +45,13 @@ Run `docker compose build api worker` separately after code changes — `api` an
 - Midtrans flow: checkout creates a `payments` row (pending, order_id `vd-<hex>-<timestamp>`) → Snap redirect URL → webhook `POST /api/billing/webhook/midtrans` (unauthenticated route, signature SHA-512 verified) → `payments.status='paid'` → `ActivateSubscription` with `provider_ref=order_id` (idempotent — 30-day sub is inserted only if no active sub with that ref exists).
 - Webhook idempotency: `webhook_events` table keyed `(provider, event_id)` where event_id = `transaction_id:transaction_status:status_code`. Always respond 2xx to Midtrans except invalid signature (403).
 - Payment status transitions live in `internal/billing` (`MarkPaymentPaid` only flips `pending`→`paid`). Order_id max 50 chars per Midtrans spec.
+
+## Telegram bot
+
+- `cmd/telegrambot` is the third binary (compose service `bot`, env `TELEGRAM_BOT_TOKEN`). Empty token = bot exits with a clear error.
+- Bot shares backend logic directly (no HTTP): job creation goes through `internal/jobs.Create` — the same atomic quota insert + duplicate check as the API. Never reimplement quota logic in a client.
+- Identity: unlinked chat = device `tg:<chat_id>` (subject `d:tg:<chat_id>`); linked chat uses the web account's user_id and plan (`telegram_links` table). Link codes are one-time, 10-minute rows in `telegram_link_codes`, created from the web (`POST /api/auth/telegram/link`).
+- Bot only notifies jobs it created (device_id `tg:` prefix); `downloads.notified_at` prevents double notification. Files ≤ 45MB go via sendDocument; larger files get a `/api/files/{id}?k=<file_key>` link — serveFile accepts `?k=` matching `file_key` as an ownership alternative.
 
 ## Admin panel
 

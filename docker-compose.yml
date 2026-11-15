@@ -60,6 +60,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  bot:
+    build: ./backend
+    command: ["/app/telegrambot"]
+    environment:
+      DATABASE_URL: postgres://videodl:${POSTGRES_PASSWORD:-videodl}@postgres:5432/videodl?sslmode=disable
+      FILES_DIR: /data/files
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      MAX_FILESIZE_MB: ${MAX_FILESIZE_MB:-500}
+    volumes:
+      - files:/data/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:
   files:

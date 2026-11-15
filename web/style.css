@@ -247,6 +247,28 @@ main {
 .auth-switch { color: var(--muted); font-size: 13px; margin-top: 12px; }
 .auth-switch a { color: var(--accent); text-decoration: none; font-weight: 600; }
 
+/* Telegram */
+#telegram h2 { margin: 0 0 6px; font-size: 16px; }
+#telegram .sub { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.tg-linked { color: var(--ok); font-size: 13.5px; margin-bottom: 10px; }
+.tg-code {
+  font-family: ui-monospace, monospace;
+  font-size: 22px;
+  letter-spacing: 3px;
+  text-align: center;
+  background: var(--card-2);
+  border: 1px dashed var(--accent);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 12px 0 8px;
+}
+#telegram code {
+  font-size: 13px;
+  background: var(--card-2);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
 /* Paket */
 #pricing { margin-top: 44px; }
 #pricing h2 { font-size: 18px; margin-bottom: 14px; }

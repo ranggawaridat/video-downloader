@@ -65,6 +65,7 @@ async function refreshMe() {
   renderHeader();
   renderQuota();
   renderPlans(); // status tombol bergantung plan aktif
+  refreshTelegram();
 }
 
 function renderHeader() {
@@ -148,6 +149,62 @@ $("#auth-form").addEventListener("submit", async (e) => {
     el.classList.remove("hidden");
   } finally {
     btn.disabled = false;
+  }
+});
+
+/* ---------- telegram ---------- */
+
+async function refreshTelegram() {
+  const sec = $("#telegram");
+  if (!me || !me.authenticated) {
+    sec.classList.add("hidden");
+    return;
+  }
+  sec.classList.remove("hidden");
+  $("#tg-code-box").classList.add("hidden");
+  let st;
+  try { st = await api("/api/auth/telegram/status"); } catch { st = { linked: false }; }
+
+  const statusEl = $("#tg-status");
+  const unlinkBtn = $("#tg-unlink-btn");
+  statusEl.innerHTML = "";
+  if (st.linked) {
+    const ok = document.createElement("div");
+    ok.className = "tg-linked";
+    ok.textContent = "✅ Chat " + st.chat_id + " terikat ke akun ini";
+    statusEl.appendChild(ok);
+    unlinkBtn.classList.remove("hidden");
+  } else {
+    const info = document.createElement("div");
+    info.className = "sub";
+    info.textContent = "Belum terikat. Klik tombol, lalu kirim /link <kode> ke bot.";
+    statusEl.appendChild(info);
+    unlinkBtn.classList.add("hidden");
+  }
+}
+
+$("#tg-code-btn").addEventListener("click", async () => {
+  const btn = $("#tg-code-btn");
+  btn.disabled = true;
+  try {
+    const res = await api("/api/auth/telegram/link", { method: "POST" });
+    $("#tg-code").textContent = res.code.toUpperCase();
+    $("#tg-code-echo").textContent = res.code.toUpperCase();
+    $("#tg-code-box").classList.remove("hidden");
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("#tg-unlink-btn").addEventListener("click", async () => {
+  if (!confirm("Lepas ikatan chat Telegram dari akun ini?")) return;
+  try {
+    await api("/api/auth/telegram/link", { method: "DELETE" });
+    await refreshTelegram();
+  } catch (err) {
+    alert(err.message);
   }
 });
 

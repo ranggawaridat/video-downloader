@@ -58,6 +58,9 @@ func New(pool *pgxpool.Pool, cfg config.Config, log *slog.Logger) http.Handler {
 	r.Get("/api/downloads/{id}", h.getDownload)
 	r.Delete("/api/downloads/{id}", h.cancelDownload)
 	r.Get("/api/files/{id}", h.serveFile)
+	r.Post("/api/auth/telegram/link", h.telegramLinkStart)
+	r.Delete("/api/auth/telegram/link", h.telegramUnlink)
+	r.Get("/api/auth/telegram/status", h.telegramStatus)
 
 	r.Route("/api/admin", func(r chi.Router) {
 		r.Use(h.requireAdmin)

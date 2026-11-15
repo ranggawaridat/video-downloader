@@ -19,6 +19,8 @@ type Config struct {
 	BillingMode        string        // manual|midtrans|stripe|telegram (manual = aktivasi instan dev)
 	MidtransServerKey  string        // server key Midtrans (kosong = belum dikonfigurasi)
 	MidtransProduction bool          // true = app.midtrans.com, false = sandbox
+	TelegramBotToken   string        // token @BotFather (kosong = bot off)
+	PublicBaseURL      string        // URL publik untuk link file dari bot
 	MaxFilesizeMB      int           // batas ukuran file per unduhan (MB)
 	JobTimeout         time.Duration // batas waktu maksimum satu job unduhan
 	MaxAttempts        int           // percobaan ulang maksimum per job
@@ -38,6 +40,8 @@ func Load() Config {
 		BillingMode:        getEnv("BILLING_MODE", "manual"),
 		MidtransServerKey:  getEnv("MIDTRANS_SERVER_KEY", ""),
 		MidtransProduction: getEnvBool("MIDTRANS_IS_PRODUCTION", false),
+		TelegramBotToken:   getEnv("TELEGRAM_BOT_TOKEN", ""),
+		PublicBaseURL:      getEnv("PUBLIC_BASE_URL", "http://localhost:8080"),
 		MaxFilesizeMB:      getEnvInt("MAX_FILESIZE_MB", 500),
 		JobTimeout:         time.Duration(getEnvInt("JOB_TIMEOUT_MINUTES", 20)) * time.Minute,
 		MaxAttempts:        getEnvInt("MAX_ATTEMPTS", 3),
