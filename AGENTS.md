@@ -37,6 +37,13 @@ Run `docker compose build api worker` separately after code changes — `api` an
 - Row ownership uses the `ownershipClause` pattern in `internal/httpapi/downloads.go` (`$1::uuid IS NOT NULL AND user_id = ...`). All user-scoped queries must go through it.
 - Billing is `BILLING_MODE=manual` only (instant activation via `/api/billing/checkout`). Real gateways are not implemented; `internal/billing` is the seam for adding them.
 
+## Admin panel
+
+- `/admin` (vanilla JS, `web/admin.*`) gated by `role='admin'` on `users`.
+- Admin account is bootstrapped at API startup from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (empty env = skipped). Existing email is promoted to admin, password NOT overwritten.
+- Admin API lives under `/api/admin/*` behind `requireAdmin`. Stats use single-row subselects; keep new stats there, not as separate round trips.
+- Admin retry (`POST /api/admin/downloads/{id}/retry`) resets `attempts=0` — that's what lets the claim query pick it up again.
+
 ## yt-dlp engine
 
 - `yt-dlp` version is **pinned** in `backend/Dockerfile`. Old versions silently break against YouTube/TikTok ("No video formats found") — when downloads fail broadly, bump the pinned version (check https://pypi.org/pypi/yt-dlp/json) and rebuild both images.

@@ -30,7 +30,8 @@ cp .env.example .env          # sesuaikan bila perlu
 docker compose up -d --build
 ```
 
-Buka http://localhost:8080
+Buka http://localhost:8080 — frontend pengguna.
+Buka http://localhost:8080/admin — panel admin (akun dari `ADMIN_EMAIL`/`ADMIN_PASSWORD`).
 
 Stop: `docker compose down` (tambah `-v` untuk menghapus data).
 
@@ -63,6 +64,12 @@ go run ./cmd/worker
 | POST | `/api/auth/register` | `{email, password}` — daftar + langsung login |
 | POST | `/api/auth/login` | `{email, password}` |
 | POST | `/api/auth/logout` | Hapus session |
+| GET | `/api/admin/stats/overview` | **Admin** — statistik dashboard |
+| GET | `/api/admin/users` | **Admin** — daftar user (query `q=`) |
+| POST | `/api/admin/users/{id}/grant` | **Admin** — aktivasi manual langganan |
+| GET | `/api/admin/downloads` | **Admin** — semua job (query `status=`) |
+| POST | `/api/admin/downloads/{id}/retry` | **Admin** — requeue job gagal/canceled |
+| PATCH | `/api/admin/plans/{code}` | **Admin** — ubah benefit plan |
 | POST | `/api/billing/checkout` | `{plan_code}` — aktifkan langganan (mode `manual`) |
 | POST | `/api/billing/cancel` | Batalkan langganan aktif |
 | POST | `/api/metadata` | `{url}` → judul, thumbnail, durasi, daftar resolusi |
@@ -83,6 +90,7 @@ Format error: `{"error": {"code": "...", "message": "..."}}`.
 | `FILES_DIR` | `./data/files` | Penyimpanan file |
 | `STATIC_DIR` | `../web` | Direktori frontend |
 | `BILLING_MODE` | `manual` | `manual` = aktivasi langganan instan (dev); gateway lain menyusul |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | — | Bootstrap akun admin saat API start (kosong = lewati) |
 | `MAX_FILESIZE_MB` | `500` | Batas ukuran file |
 | `JOB_TIMEOUT_MINUTES` | `20` | Timeout per job |
 | `MAX_ATTEMPTS` | `3` | Percobaan ulang per job |
