@@ -16,7 +16,7 @@ job queue berbasis PostgreSQL, dan web frontend sederhana (vanilla HTML/CSS/JS).
   yt-dlp, memperbarui progres, lalu menandai `completed`.
 - **File** disimpan di volume `files` dan dihapus otomatis setelah TTL
   (`FILE_TTL_HOURS`, default 6 jam).
-- **Kuota & plan** dari tabel `plans`: free (3/hari, 720p, retensi 6 jam) dan
+- **Kuota & plan** dari tabel `plans`: free (3/hari, hingga 1024p, retensi 6 jam) dan
   pro (50/hari, 1080p, retensi 24 jam) — bisa diubah langsung di DB/admin nanti.
 - **Akun**: email + password (Argon2id), session cookie HttpOnly 30 hari.
   Riwayat unduhan anonim di browser otomatis dipindah ke akun saat login/daftar.

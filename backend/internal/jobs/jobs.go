@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -56,7 +57,7 @@ func Create(ctx context.Context, pool *pgxpool.Pool, id Identity, plan *billing.
 	}
 	if !validFormat(format) {
 		return "", &Error{Code: "invalid_format",
-			Message: "Format harus 360, 480, 720, 1080, atau audio"}
+			Message: "Format harus berupa resolusi video atau audio"}
 	}
 	if format != "audio" && parseHeight(format) > plan.MaxHeight {
 		return "", &Error{Code: "quality_not_allowed",
@@ -114,28 +115,18 @@ func Create(ctx context.Context, pool *pgxpool.Pool, id Identity, plan *billing.
 }
 
 func validFormat(f string) bool {
-	if f == "audio" {
-		return true
-	}
-	h := parseHeight(f)
-	return h > 0 && isStandardHeight(h)
+	return f == "audio" || parseHeight(f) > 0
 }
 
 func parseHeight(f string) int {
-	n := 0
 	for _, c := range f {
 		if c < '0' || c > '9' {
 			return -1
 		}
-		n = n*10 + int(c-'0')
+	}
+	n, err := strconv.Atoi(f)
+	if err != nil {
+		return -1
 	}
 	return n
-}
-
-func isStandardHeight(h int) bool {
-	switch h {
-	case 144, 240, 360, 480, 720, 1080, 1440, 2160:
-		return true
-	}
-	return false
 }
