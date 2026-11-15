@@ -481,12 +481,19 @@ function renderPlans(plans) {
         }
         btn.disabled = true;
         try {
-          await api("/api/billing/checkout", {
+          const res = await api("/api/billing/checkout", {
             method: "POST",
             body: JSON.stringify({ plan_code: p.code }),
           });
-          alert("Langganan " + p.name + " aktif! Selamat menikmati. 🎉");
-          await refreshMe();
+          if (res.payment_url) {
+            // Mode gateway: buka Snap di tab baru, lalu polling status.
+            window.open(res.payment_url, "_blank");
+            await pollPayment(res.payment_id);
+            await refreshMe();
+          } else {
+            alert("Langganan " + p.name + " aktif! Selamat menikmati. 🎉");
+            await refreshMe();
+          }
         } catch (err) {
           alert(err.message);
         } finally {
@@ -502,6 +509,35 @@ function renderPlans(plans) {
 }
 
 /* ---------- init ---------- */
+
+// pollPayment: polling status payment setiap 3 detik (maks ~3 menit)
+// sampai paid / failed, atau user menutup halaman Snap.
+function pollPayment(id) {
+  return new Promise((resolve) => {
+    let elapsed = 0;
+    const iv = setInterval(async () => {
+      elapsed += 3;
+      try {
+        const pm = await api("/api/billing/payments/" + id);
+        if (pm.status === "paid") {
+          clearInterval(iv);
+          alert("Pembayaran diterima — langganan aktif! 🎉");
+          resolve();
+        } else if (pm.status === "failed" || pm.status === "expired") {
+          clearInterval(iv);
+          alert("Pembayaran gagal atau dibatalkan. Coba lagi ya.");
+          resolve();
+        }
+      } catch { /* biarkan polling lanjut */ }
+      if (elapsed >= 180) {
+        clearInterval(iv);
+        alert("Menunggu pembayaran terlalu lama. Jika sudah membayar, " +
+              "halaman ini bisa diperbarui setelah notifikasi masuk.");
+        resolve();
+      }
+    }, 3000);
+  });
+}
 
 refreshMe();
 refreshHistory();

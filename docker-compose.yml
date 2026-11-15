@@ -25,6 +25,8 @@ services:
       FILES_DIR: /data/files
       STATIC_DIR: /srv/web
       BILLING_MODE: ${BILLING_MODE:-manual}
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-}
+      MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION:-false}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@vidgrab.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin12345}
       MAX_FILESIZE_MB: ${MAX_FILESIZE_MB:-500}

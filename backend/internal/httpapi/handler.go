@@ -13,14 +13,16 @@ import (
 
 	"videodl/backend/internal/config"
 	"videodl/backend/internal/device"
+	"videodl/backend/internal/midtrans"
 	"videodl/backend/internal/ytdlp"
 )
 
 type Handler struct {
-	pool *pgxpool.Pool
-	cfg  config.Config
-	yt   ytdlp.Options
-	log  *slog.Logger
+	pool     *pgxpool.Pool
+	cfg      config.Config
+	yt       ytdlp.Options
+	midtrans *midtrans.Client
+	log      *slog.Logger
 }
 
 // New membangun router lengkap API + static file frontend.
@@ -33,7 +35,8 @@ func New(pool *pgxpool.Pool, cfg config.Config, log *slog.Logger) http.Handler {
 			FfmpegPath:    cfg.FfmpegPath,
 			MaxFilesizeMB: cfg.MaxFilesizeMB,
 		},
-		log: log,
+		midtrans: midtrans.New(cfg.MidtransServerKey, cfg.MidtransProduction),
+		log:      log,
 	}
 
 	r := chi.NewRouter()
@@ -47,6 +50,8 @@ func New(pool *pgxpool.Pool, cfg config.Config, log *slog.Logger) http.Handler {
 	r.Post("/api/auth/logout", h.logout)
 	r.Post("/api/billing/checkout", h.checkout)
 	r.Post("/api/billing/cancel", h.cancelSubscription)
+	r.Get("/api/billing/payments/{id}", h.paymentStatus)
+	r.Post("/api/billing/webhook/midtrans", h.midtransWebhook)
 	r.Post("/api/metadata", h.metadata)
 	r.Post("/api/downloads", h.createDownload)
 	r.Get("/api/downloads", h.listDownloads)

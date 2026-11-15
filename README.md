@@ -70,7 +70,9 @@ go run ./cmd/worker
 | GET | `/api/admin/downloads` | **Admin** — semua job (query `status=`) |
 | POST | `/api/admin/downloads/{id}/retry` | **Admin** — requeue job gagal/canceled |
 | PATCH | `/api/admin/plans/{code}` | **Admin** — ubah benefit plan |
-| POST | `/api/billing/checkout` | `{plan_code}` — aktifkan langganan (mode `manual`) |
+| POST | `/api/billing/checkout` | `{plan_code}` — mode `manual`: aktivasi instan; mode `midtrans`: buat Snap payment |
+| GET | `/api/billing/payments/{id}` | Status payment milik sendiri (polling frontend) |
+| POST | `/api/billing/webhook/midtrans` | Notifikasi Midtrans (verifikasi signature, idempotent) |
 | POST | `/api/billing/cancel` | Batalkan langganan aktif |
 | POST | `/api/metadata` | `{url}` → judul, thumbnail, durasi, daftar resolusi |
 | POST | `/api/downloads` | `{url, format}` → buat job (`360`/`480`/`720`/`1080`/`audio`) |
@@ -89,13 +91,42 @@ Format error: `{"error": {"code": "...", "message": "..."}}`.
 | `DATABASE_URL` | — | DSN PostgreSQL |
 | `FILES_DIR` | `./data/files` | Penyimpanan file |
 | `STATIC_DIR` | `../web` | Direktori frontend |
-| `BILLING_MODE` | `manual` | `manual` = aktivasi langganan instan (dev); gateway lain menyusul |
+| `BILLING_MODE` | `manual` | `manual` = aktivasi instan (dev/admin); `midtrans` = Midtrans Snap |
+| `MIDTRANS_SERVER_KEY` | — | Server key Midtrans (dashboard → Settings → Access Keys) |
+| `MIDTRANS_IS_PRODUCTION` | `false` | `true` = produksi (`app.midtrans.com`), default sandbox |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | — | Bootstrap akun admin saat API start (kosong = lewati) |
 | `MAX_FILESIZE_MB` | `500` | Batas ukuran file |
 | `JOB_TIMEOUT_MINUTES` | `20` | Timeout per job |
 | `MAX_ATTEMPTS` | `3` | Percobaan ulang per job |
 | `WORKER_CONCURRENCY` | `2` | Job paralel per worker |
 | `YTDLP_PATH` / `FFMPEG_PATH` | `yt-dlp` / `ffmpeg` | Path binary engine |
+
+## Pembayaran (Midtrans Snap)
+
+Mode `BILLING_MODE=midtrans` mengaktifkan pembayaran nyata via Midtrans Snap
+(QRIS, GoPay, VA, kartu). Tanpa konfigurasi ini, mode `manual` tetap jalan
+sebagai fallback.
+
+1. Daftar/akses [dashboard Midtrans](https://dashboard.midtrans.com), ambil
+   **Server Key** dari *Settings → Access Keys* (pakai *Sandbox* untuk uji).
+2. Isi `.env`:
+   ```env
+   BILLING_MODE=midtrans
+   MIDTRANS_SERVER_KEY=SB-Mid-server-xxxx
+   MIDTRANS_IS_PRODUCTION=false
+   ```
+3. Set **Notification URL** di *Settings → Configuration*:
+   `https://<domain>/api/billing/webhook/midtrans`
+   (endpoint memverifikasi signature SHA-512 dan idempotent; Midtrans
+   mengharapkan respons 2xx).
+4. Testing webhook lokal butuh URL publik — pakai tunnel:
+   `cloudflared tunnel --url http://localhost:8080` lalu arahkan Notification
+   URL ke domain tunnel.
+
+Alur: checkout → payment `pending` + redirect URL Snap → user bayar →
+webhook `settlement` → payment `paid` → langganan 30 hari aktif otomatis.
+Aktivasi idempotent via `provider_ref` (order_id); frontend mem-poll
+`GET /api/billing/payments/{id}` setelah membuka Snap.
 
 ## Struktur
 

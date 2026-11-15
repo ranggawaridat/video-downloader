@@ -35,7 +35,16 @@ Run `docker compose build api worker` separately after code changes — `api` an
 - Entitlements come from the `plans` table (seeded: `free` 3/day, 720p, 6h retention; `pro` 50/day, 1080p, 24h) — **not** from env vars. Anonymous users get the `free` plan.
 - `usage_daily` is keyed by **subject**: `'u:<user_id>'` for logged-in users, `'d:<device_id>'` for anonymous (cookie `vd_device`). The quota increment is a single atomic `INSERT ... ON CONFLICT ... WHERE usage_daily.downloads < limit` — keep it atomic.
 - Row ownership uses the `ownershipClause` pattern in `internal/httpapi/downloads.go` (`$1::uuid IS NOT NULL AND user_id = ...`). All user-scoped queries must go through it.
-- Billing is `BILLING_MODE=manual` only (instant activation via `/api/billing/checkout`). Real gateways are not implemented; `internal/billing` is the seam for adding them.
+
+## Billing & Midtrans
+
+- Entitlements come from the `plans` table (seeded: `free` 3/day, 720p, 6h retention; `pro` 50/day, 1080p, 24h) — **not** from env vars. Anonymous users get the `free` plan.
+- `usage_daily` is keyed by **subject**: `'u:<user_id>'` for logged-in users, `'d:<device_id>'` for anonymous (cookie `vd_device`). The quota increment is a single atomic `INSERT ... ON CONFLICT ... WHERE usage_daily.downloads < limit` — keep it atomic.
+- Row ownership uses the `ownershipClause` pattern in `internal/httpapi/downloads.go` (`$1::uuid IS NOT NULL AND user_id = ...`). All user-scoped queries must go through it.
+- Billing modes: `BILLING_MODE=manual` (instant activation, dev/admin fallback) and `BILLING_MODE=midtrans` (Midtrans Snap). `internal/billing` is the seam for adding gateways (Stripe, Telegram Stars).
+- Midtrans flow: checkout creates a `payments` row (pending, order_id `vd-<hex>-<timestamp>`) → Snap redirect URL → webhook `POST /api/billing/webhook/midtrans` (unauthenticated route, signature SHA-512 verified) → `payments.status='paid'` → `ActivateSubscription` with `provider_ref=order_id` (idempotent — 30-day sub is inserted only if no active sub with that ref exists).
+- Webhook idempotency: `webhook_events` table keyed `(provider, event_id)` where event_id = `transaction_id:transaction_status:status_code`. Always respond 2xx to Midtrans except invalid signature (403).
+- Payment status transitions live in `internal/billing` (`MarkPaymentPaid` only flips `pending`→`paid`). Order_id max 50 chars per Midtrans spec.
 
 ## Admin panel
 

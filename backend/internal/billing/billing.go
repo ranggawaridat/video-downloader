@@ -8,6 +8,7 @@ package billing
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -97,12 +98,151 @@ func HasActiveSubscription(ctx context.Context, pool *pgxpool.Pool, userID strin
 	return exists, err
 }
 
+// ActivateSubscription mengaktifkan langganan berbayar 30 hari.
+// provider: "manual" (admin/dev) atau "midtrans" (webhook setelah paid).
+// Idempotent: jika payment sudah pernah mengaktifkan langganan (ada
+// subscription dengan provider_ref yang sama), tidak dibuat lagi.
+func ActivateSubscription(ctx context.Context, pool *pgxpool.Pool, userID, planID, provider, providerRef string, days int) error {
+	if providerRef != "" {
+		var exists bool
+		if err := pool.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM subscriptions
+				WHERE provider_ref = $1 AND status = 'active'
+			)`, providerRef).Scan(&exists); err == nil && exists {
+			return nil
+		}
+	}
+	_, err := pool.Exec(ctx, `
+		INSERT INTO subscriptions (user_id, plan_id, status, provider, provider_ref, period_end)
+		VALUES ($1::uuid, $2::uuid, 'active', $3, $4, now() + make_interval(days => $5))`,
+		userID, planID, provider, providerRef, days)
+	return err
+}
+
 // ActivateManual mengaktifkan langganan instan (mode development/admin).
 func ActivateManual(ctx context.Context, pool *pgxpool.Pool, userID, planID string, days int) error {
+	return ActivateSubscription(ctx, pool, userID, planID, "manual", "", days)
+}
+
+// ---------- payments ----------
+
+// Payment satu transaksi pembayaran ke gateway (atau aktivasi manual).
+type Payment struct {
+	ID          string     `json:"id"`
+	UserID      string     `json:"user_id"`
+	PlanID      string     `json:"-"`
+	PlanCode    string     `json:"plan_code"`
+	Provider    string     `json:"provider"`
+	ProviderRef string     `json:"provider_ref"`
+	AmountIDR   int        `json:"amount_idr"`
+	Status      string     `json:"status"`
+	RedirectURL string     `json:"redirect_url"`
+	CreatedAt   time.Time  `json:"created_at"`
+	PaidAt      *time.Time `json:"paid_at,omitempty"`
+}
+
+const paymentCols = `
+	pm.id::text, pm.user_id::text, pm.plan_id::text, p.code, pm.provider, pm.provider_ref,
+	pm.amount_idr, pm.status, pm.redirect_url, pm.created_at, pm.paid_at`
+
+func scanPayment(row pgx.Row) (*Payment, error) {
+	var m Payment
+	if err := row.Scan(&m.ID, &m.UserID, &m.PlanID, &m.PlanCode, &m.Provider, &m.ProviderRef,
+		&m.AmountIDR, &m.Status, &m.RedirectURL, &m.CreatedAt, &m.PaidAt); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// CreatePayment membuat payment pending sebelum redirect ke gateway.
+// providerRef = order_id (unik per provider, kosong untuk manual).
+func CreatePayment(ctx context.Context, pool *pgxpool.Pool, userID, planID, provider, providerRef string, amountIDR int) (*Payment, error) {
+	m, err := scanPayment(pool.QueryRow(ctx, `
+		WITH ins AS (
+			INSERT INTO payments (user_id, plan_id, provider, provider_ref, amount_idr)
+			VALUES ($1::uuid, $2::uuid, $3, $4, $5)
+			RETURNING *
+		)
+		SELECT `+paymentCols+`
+		FROM ins pm JOIN plans p ON p.id = pm.plan_id`,
+		userID, planID, provider, providerRef, amountIDR))
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// PaymentByID mengambil payment milik user tertentu (owner check di caller).
+func PaymentByID(ctx context.Context, pool *pgxpool.Pool, id, userID string) (*Payment, error) {
+	m, err := scanPayment(pool.QueryRow(ctx,
+		"SELECT "+paymentCols+" FROM payments pm JOIN plans p ON p.id = pm.plan_id "+
+			"WHERE pm.id = $1::uuid AND pm.user_id = $2::uuid", id, userID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return m, err
+}
+
+// PaymentByRef mencari payment berdasarkan order_id gateway (untuk webhook).
+func PaymentByRef(ctx context.Context, pool *pgxpool.Pool, provider, providerRef string) (*Payment, error) {
+	m, err := scanPayment(pool.QueryRow(ctx,
+		"SELECT "+paymentCols+" FROM payments pm JOIN plans p ON p.id = pm.plan_id "+
+			"WHERE pm.provider = $1 AND pm.provider_ref = $2", provider, providerRef))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return m, err
+}
+
+// UpdatePaymentRedirect menyimpan redirect URL Snap.
+func UpdatePaymentRedirect(ctx context.Context, pool *pgxpool.Pool, id, redirectURL string) error {
+	_, err := pool.Exec(ctx,
+		"UPDATE payments SET redirect_url = $1 WHERE id = $2::uuid", redirectURL, id)
+	return err
+}
+
+// SetPaymentStatus mengubah status payment (+paid_at saat paid).
+func SetPaymentStatus(ctx context.Context, pool *pgxpool.Pool, id, status string) error {
 	_, err := pool.Exec(ctx, `
-		INSERT INTO subscriptions (user_id, plan_id, status, provider, period_end)
-		VALUES ($1::uuid, $2::uuid, 'active', 'manual', now() + make_interval(days => $3))`,
-		userID, planID, days)
+		UPDATE payments SET status = $1,
+		       paid_at = CASE WHEN $1 = 'paid' THEN now() ELSE paid_at END
+		WHERE id = $2::uuid`, status, id)
+	return err
+}
+
+// MarkPaymentPaid set status paid; mengembalikan false jika sudah paid
+// (idempotensi: webhook bisa datang lebih dari sekali).
+func MarkPaymentPaid(ctx context.Context, pool *pgxpool.Pool, id string) (bool, error) {
+	ct, err := pool.Exec(ctx, `
+		UPDATE payments SET status = 'paid', paid_at = now()
+		WHERE id = $1::uuid AND status = 'pending'`, id)
+	if err != nil {
+		return false, err
+	}
+	return ct.RowsAffected() > 0, nil
+}
+
+// RecordWebhookEvent menyimpan event gateway untuk idempotensi.
+// Mengembalikan false jika event sudah pernah diproses.
+func RecordWebhookEvent(ctx context.Context, pool *pgxpool.Pool, provider, eventID string, payload []byte) (bool, error) {
+	ct, err := pool.Exec(ctx, `
+		INSERT INTO webhook_events (provider, event_id, payload)
+		VALUES ($1, $2, $3::jsonb)
+		ON CONFLICT (provider, event_id) DO NOTHING`, provider, eventID, payload)
+	if err != nil {
+		return false, err
+	}
+	return ct.RowsAffected() > 0, nil
+}
+
+// RecordManualPayment: catat aktivasi manual sebagai payment paid
+// agar riwayat pembayaran tetap terlacak.
+func RecordManualPayment(ctx context.Context, pool *pgxpool.Pool, userID, planID string, amountIDR int) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO payments (user_id, plan_id, provider, provider_ref, amount_idr, status, paid_at)
+		VALUES ($1::uuid, $2::uuid, 'manual', '', $3, 'paid', now())`,
+		userID, planID, amountIDR)
 	return err
 }
 
