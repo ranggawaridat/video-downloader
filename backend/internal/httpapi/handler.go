@@ -40,6 +40,8 @@ func NewHandler(pool *pgxpool.Pool, cfg config.Config, log *slog.Logger) *Handle
 			YtDlpPath:     cfg.YtDlpPath,
 			FfmpegPath:    cfg.FfmpegPath,
 			MaxFilesizeMB: cfg.MaxFilesizeMB,
+			CookiesFile:   cfg.YtDlpCookies,
+			Proxy:         cfg.YtDlpProxy,
 		},
 		midtrans: midtrans.New(cfg.MidtransServerKey, cfg.MidtransProduction),
 		log:      log,

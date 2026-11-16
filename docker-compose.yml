@@ -34,8 +34,11 @@ services:
       MAX_FILESIZE_MB: ${MAX_FILESIZE_MB:-500}
       JOB_TIMEOUT_MINUTES: ${JOB_TIMEOUT_MINUTES:-20}
       MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
+      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-/data/secrets/cookies.txt}
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
     volumes:
       - ./web:/srv/web:ro
+      - ./secrets:/data/secrets:ro
       - files:/data/files
     ports:
       - "${APP_PORT:-8080}:8080"
@@ -55,7 +58,10 @@ services:
       JOB_TIMEOUT_MINUTES: ${JOB_TIMEOUT_MINUTES:-20}
       MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-/data/secrets/cookies.txt}
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
     volumes:
+      - ./secrets:/data/secrets:ro
       - files:/data/files
     depends_on:
       postgres:

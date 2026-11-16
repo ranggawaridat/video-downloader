@@ -29,6 +29,35 @@ type Options struct {
 	YtDlpPath     string
 	FfmpegPath    string
 	MaxFilesizeMB int
+	// CookiesFile: berkas cookies format Netscape (ekspor browser).
+	// Dibutuhkan situs yang memblokir IP datacenter, mis. TikTok/YouTube.
+	CookiesFile string
+	// Proxy: URL proxy opsional, mis. http://user:pass@host:8080
+	Proxy string
+}
+
+// opsiJaringan mengembalikan argumen jaringan yang berlaku.
+// Berkas cookies diperiksa lebih dulu: yt-dlp menolak path yang tidak ada,
+// dan unduhan tidak boleh gagal hanya karena berkasnya belum diisi.
+func opsiJaringan(opts Options) []string {
+	var args []string
+	if opts.CookiesFile != "" {
+		if st, err := os.Stat(opts.CookiesFile); err == nil && !st.IsDir() {
+			// yt-dlp menulis kembali berkas cookies setelah dipakai, sehingga
+			// mount read-only membuatnya gagal (OSError: read-only file system).
+			// Salin ke path sementara yang bisa ditulis; berkas asli tetap utuh.
+			if data, rerr := os.ReadFile(opts.CookiesFile); rerr == nil {
+				tmp := filepath.Join(os.TempDir(), "videodl-cookies.txt")
+				if os.WriteFile(tmp, data, 0o600) == nil {
+					args = append(args, "--cookies", tmp)
+				}
+			}
+		}
+	}
+	if opts.Proxy != "" {
+		args = append(args, "--proxy", opts.Proxy)
+	}
+	return args
 }
 
 // Media adalah subset JSON output `yt-dlp -J` yang kami perlukan.
@@ -90,7 +119,9 @@ func Metadata(ctx context.Context, opts Options, rawURL string) (*Media, error) 
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	args := []string{"-J", "--no-playlist", "--no-warnings", "--socket-timeout", "15", rawURL}
+	args := []string{"-J", "--no-playlist", "--no-warnings", "--socket-timeout", "15"}
+	args = append(args, opsiJaringan(opts)...)
+	args = append(args, rawURL)
 	stdout, stderr, err := run(cctx, opts.YtDlpPath, args)
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
@@ -140,6 +171,7 @@ func Download(ctx context.Context, opts Options, workDir, rawURL, format string,
 		"--progress-template", "download:VDLPROGRESS|%(progress._percent_str)s|%(progress.total_bytes_estimate)s",
 		"-o", filepath.Join(workDir, "%(id)s.%(ext)s"),
 	}
+	args = append(args, opsiJaringan(opts)...)
 	switch format {
 	case "audio":
 		args = append(args, "-f", "bestaudio", "-x", "--audio-format", "mp3", "--audio-quality", "0")

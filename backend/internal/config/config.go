@@ -14,6 +14,8 @@ type Config struct {
 	StaticDir          string // direktori frontend (web) yang disajikan API
 	YtDlpPath          string // path/nama binary yt-dlp
 	FfmpegPath         string // path/nama binary ffmpeg
+	YtDlpCookies       string // berkas cookies Netscape untuk --cookies (opsional)
+	YtDlpProxy         string // proxy untuk yt-dlp (opsional)
 	AdminEmail         string // akun admin dibuat/dipromosikan saat startup (kosong = lewati)
 	AdminPassword      string
 	BillingMode        string        // manual|midtrans|stripe (manual = aktivasi instan dev)
@@ -34,6 +36,8 @@ func Load() Config {
 		StaticDir:          getEnv("STATIC_DIR", "../web"),
 		YtDlpPath:          getEnv("YTDLP_PATH", "yt-dlp"),
 		FfmpegPath:         getEnv("FFMPEG_PATH", "ffmpeg"),
+		YtDlpCookies:       getEnv("YTDLP_COOKIES_FILE", ""),
+		YtDlpProxy:         getEnv("YTDLP_PROXY", ""),
 		AdminEmail:         getEnv("ADMIN_EMAIL", ""),
 		AdminPassword:      getEnv("ADMIN_PASSWORD", ""),
 		BillingMode:        getEnv("BILLING_MODE", "manual"),

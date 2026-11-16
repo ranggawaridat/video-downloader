@@ -12,3 +12,4 @@ backend/vendor/
 .DS_Store
 Thumbs.db
 *.exe
+secrets/
